@@ -15,4 +15,20 @@ message Header {
     int64 timestamp = 5;
 }
 
-message Transaction {}
+message TxInput {
+    bytes prevTxHash = 1;
+    uint32 prevOutIndex = 2;
+    bytes pubKey = 3;
+    bytes signature = 4;
+}
+
+message TxOutput {
+    int64 amount = 1;
+    bytes address = 2;
+}
+
+message Transaction {
+    int32 version = 1;
+    repeated TxInput inputs = 2;
+    repeated TxOutput outputs = 3;
+}
