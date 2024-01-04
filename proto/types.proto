@@ -2,6 +2,19 @@ syntax = "proto3";
 
 option go_package = "github.com/gabuladze/blockchain/proto";
 
+service Node {
+    rpc Handshake(Version) returns (Version);
+    rpc HandleTransaction(Transaction) returns (None);
+}
+
+message Version {
+    string version = 1;
+    int64 height = 2;
+    string listenAddr = 3;
+}
+
+message None { }
+
 message Block {
     Header header = 1;
     repeated Transaction transactions = 2;
