@@ -10,7 +10,11 @@ import (
 
 // HashBlock returns sha256 of the header.
 func HashBlock(block *proto.Block) []byte {
-	b, err := pb.Marshal(block)
+	return HashHeader(block.Header)
+}
+
+func HashHeader(h *proto.Header) []byte {
+	b, err := pb.Marshal(h)
 	if err != nil {
 		panic(err)
 	}
