@@ -10,6 +10,8 @@ import (
 	"github.com/gabuladze/blockchain/types"
 )
 
+const godSeedStr = "97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e6"
+
 type HeaderList struct {
 	headers []*proto.Header
 }
@@ -41,12 +43,14 @@ func (hl *HeaderList) Len() int {
 
 type Chain struct {
 	blockStore BlockStorer
+	txStore    TxStorer
 	headers    HeaderList
 }
 
-func NewChain(bs BlockStorer) *Chain {
+func NewChain(bs BlockStorer, ts TxStorer) *Chain {
 	chain := &Chain{
 		blockStore: bs,
+		txStore:    ts,
 		headers:    NewHeaderList(),
 	}
 	chain.addBlock(chain.createGenesisBlock())
@@ -62,12 +66,18 @@ func (c *Chain) AddBlock(b *proto.Block) error {
 		return err
 	}
 
-	c.headers.Add(b.Header)
-	return c.blockStore.Put(b)
+	return c.addBlock(b)
 }
 
 func (c *Chain) addBlock(b *proto.Block) error {
 	c.headers.Add(b.Header)
+
+	for _, tx := range b.Transactions {
+		if err := c.txStore.Put(tx); err != nil {
+			return err
+		}
+	}
+
 	return c.blockStore.Put(b)
 }
 
@@ -105,11 +115,19 @@ func (c *Chain) ValidateBlock(b *proto.Block) error {
 }
 
 func (c *Chain) createGenesisBlock() *proto.Block {
-	privKey := crypto.NewPrivateKey()
+	privKey := crypto.NewPrivateKeyFromString(godSeedStr)
 	block := &proto.Block{
 		Header: &proto.Header{
 			Version: 1,
 			Height:  0,
+		},
+		Transactions: []*proto.Transaction{
+			{
+				Version: 1,
+				Outputs: []*proto.TxOutput{
+					{Amount: 1000, Address: privKey.Public().Address().Bytes()},
+				},
+			},
 		},
 	}
 	types.SignBlock(privKey, block)

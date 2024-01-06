@@ -1,16 +1,34 @@
 package node
 
 import (
+	"encoding/hex"
 	"reflect"
 	"testing"
 
 	"github.com/gabuladze/blockchain/crypto"
+	"github.com/gabuladze/blockchain/proto"
 	"github.com/gabuladze/blockchain/types"
 	"github.com/gabuladze/blockchain/utils"
 )
 
+func randomBlock(t *testing.T, c *Chain) *proto.Block {
+	var (
+		privKey = crypto.NewPrivateKey()
+		block   = utils.RandomBlock()
+	)
+
+	prevBlock, err := c.GetBlockByHeight(c.Height())
+	if err != nil {
+		t.Fatal("Failed to get prev block", err)
+	}
+	block.Header.PrevHash = types.HashBlock(prevBlock)
+	types.SignBlock(privKey, block)
+
+	return block
+}
+
 func TestNewChain(t *testing.T) {
-	chain := NewChain(NewMemoryBlockStore())
+	chain := NewChain(NewMemoryBlockStore(), NewMemoryTxStore())
 
 	chainHeight := chain.Height()
 	if chainHeight != 0 {
@@ -24,26 +42,16 @@ func TestNewChain(t *testing.T) {
 }
 
 func TestAddBlock(t *testing.T) {
-	chain := NewChain(NewMemoryBlockStore())
+	chain := NewChain(NewMemoryBlockStore(), NewMemoryTxStore())
 
 	for i := 0; i < 100; i++ {
-		prevBlock, err := chain.GetBlockByHeight(chain.Height())
-		if err != nil {
-			t.Fatal("Failed to get prev block", err)
-		}
+		block := randomBlock(t, chain)
 
-		privKey := crypto.NewPrivateKey()
-		block := utils.RandomBlock()
-		block.Header.PrevHash = types.HashBlock(prevBlock)
-		types.SignBlock(privKey, block)
-		blockHash := types.HashBlock(block)
-
-		err = chain.AddBlock(block)
-		if err != nil {
+		if err := chain.AddBlock(block); err != nil {
 			t.Fatal("Failed to add block", err)
 		}
 
-		blockByHash, err := chain.GetBlockByHash(blockHash)
+		blockByHash, err := chain.GetBlockByHash(types.HashBlock(block))
 		if err != nil {
 			t.Fatal("failed to get block by hash", err)
 		}
@@ -58,5 +66,50 @@ func TestAddBlock(t *testing.T) {
 		if !reflect.DeepEqual(block, blockByHeight) {
 			t.Fatalf("inserted & fetched blocks don't match. inserted=%+v fetched=%+v", block, blockByHeight)
 		}
+	}
+}
+
+func TestAddBlockWithTx(t *testing.T) {
+	var (
+		chain     = NewChain(NewMemoryBlockStore(), NewMemoryTxStore())
+		block     = randomBlock(t, chain)
+		privKey   = crypto.NewPrivateKeyFromString(godSeedStr)
+		recipient = crypto.NewPrivateKey().Public().Address().Bytes()
+	)
+
+	prevTx, err := chain.txStore.Get("b40a25e867b748d2d07401885b936bd6997a5338dfb0cd2e85bba2f6b60e4486")
+	if err != nil {
+		t.Fatal("Failed to fetch tx", err)
+	}
+
+	inputs := []*proto.TxInput{{
+		PrevTxHash:   types.HashTransaction(prevTx),
+		PrevOutIndex: 0,
+		PubKey:       privKey.Public().Bytes(),
+	}}
+	outputs := []*proto.TxOutput{
+		{Amount: 100, Address: recipient},
+		{Amount: 900, Address: privKey.Public().Address().Bytes()},
+	}
+	tx := &proto.Transaction{
+		Version: 1,
+		Inputs:  inputs,
+		Outputs: outputs,
+	}
+
+	block.Transactions = append(block.Transactions, tx)
+
+	if err := chain.AddBlock(block); err != nil {
+		t.Fatal("Failed to add block", err)
+	}
+
+	txHash := hex.EncodeToString(types.HashTransaction(tx))
+	fetchedTx, err := chain.txStore.Get(txHash)
+	if err != nil {
+		t.Fatal("Failed to fetch tx", err)
+	}
+
+	if !reflect.DeepEqual(tx, fetchedTx) {
+		t.Fatalf("tx mismatch. expected: %+v got: %+v", tx, fetchedTx)
 	}
 }
