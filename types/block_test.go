@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/gabuladze/blockchain/crypto"
@@ -16,7 +17,7 @@ func TestHashBlock(t *testing.T) {
 	}
 }
 
-func TestSignBlock(t *testing.T) {
+func TestSignVerifyBlock(t *testing.T) {
 	var (
 		block   = utils.RandomBlock()
 		privKey = crypto.NewPrivateKey()
@@ -29,5 +30,22 @@ func TestSignBlock(t *testing.T) {
 	}
 	if !sig.Verify(pubKey, HashBlock(block)) {
 		t.Fatal("invalid signature")
+	}
+
+	if !bytes.Equal(block.PubKey, pubKey.Bytes()) {
+		t.Fatalf("invalid block pubKey. expected: %v got: %v", pubKey.Bytes(), block.PubKey)
+	}
+	if !bytes.Equal(block.Signature, sig.Bytes()) {
+		t.Fatalf("invalid block signature. expected: %v got: %v", sig.Bytes(), block.Signature)
+	}
+
+	if !VerifyBlock(block) {
+		t.Fatal("signature verification failed")
+	}
+
+	incorrectPrivKey := crypto.NewPrivateKey()
+	block.PubKey = incorrectPrivKey.Public().Bytes()
+	if VerifyBlock(block) {
+		t.Fatal("expected signature verification to fail with incorrect validator pub key")
 	}
 }

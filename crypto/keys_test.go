@@ -7,12 +7,12 @@ import (
 func TestNewPrivateKey(t *testing.T) {
 	privKey := NewPrivateKey()
 	pubKey := privKey.Public()
-	if len(privKey.Bytes()) != privKeyLen {
-		t.Fatalf("invalid private key length. expected: %v got: %v", privKeyLen, len(privKey.Bytes()))
+	if len(privKey.Bytes()) != PrivKeyLen {
+		t.Fatalf("invalid private key length. expected: %v got: %v", PrivKeyLen, len(privKey.Bytes()))
 	}
 
-	if len(pubKey.Bytes()) != pubKeyLen {
-		t.Fatalf("invalid public key length. expected: %v got: %v", privKeyLen, len(pubKey.Bytes()))
+	if len(pubKey.Bytes()) != PubKeyLen {
+		t.Fatalf("invalid public key length. expected: %v got: %v", PrivKeyLen, len(pubKey.Bytes()))
 	}
 }
 
@@ -21,8 +21,8 @@ func TestNewPrivateKeyFromString(t *testing.T) {
 	privKey := NewPrivateKeyFromString(seedStr)
 	addressStr := "e7ff2dd4aa81ee62c84916cfb9e7cab6ff6e1a70"
 
-	if len(privKey.Bytes()) != privKeyLen {
-		t.Fatalf("invalid private key length. expected: %v got: %v", privKeyLen, len(privKey.Bytes()))
+	if len(privKey.Bytes()) != PrivKeyLen {
+		t.Fatalf("invalid private key length. expected: %v got: %v", PrivKeyLen, len(privKey.Bytes()))
 	}
 
 	addr := privKey.Public().Address()
@@ -56,7 +56,7 @@ func TestPrivateKeyToAddress(t *testing.T) {
 	pubKey := privKey.Public()
 	address := pubKey.Address()
 
-	if len(address.Bytes()) != addressLen {
-		t.Fatalf("expected address length to be: %v got: %v", addressLen, len(address.Bytes()))
+	if len(address.Bytes()) != AddressLen {
+		t.Fatalf("expected address length to be: %v got: %v", AddressLen, len(address.Bytes()))
 	}
 }

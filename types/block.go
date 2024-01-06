@@ -23,5 +23,22 @@ func HashHeader(h *proto.Header) []byte {
 }
 
 func SignBlock(pk crypto.PrivateKey, b *proto.Block) crypto.Signature {
-	return pk.Sign(HashBlock(b))
+	hash := HashBlock(b)
+	sig := pk.Sign(hash)
+	b.Signature = sig.Bytes()
+	b.PubKey = pk.Public().Bytes()
+	return sig
+}
+
+func VerifyBlock(b *proto.Block) bool {
+	if len(b.PubKey) != crypto.PubKeyLen {
+		return false
+	}
+	if len(b.Signature) != crypto.SignatureLen {
+		return false
+	}
+	sig := crypto.SignatureFromBytes(b.Signature)
+	pubKey := crypto.PublicKeyFromBytes(b.PubKey)
+	hash := HashBlock(b)
+	return sig.Verify(pubKey, hash)
 }
