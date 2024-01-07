@@ -96,6 +96,8 @@ func TestAddBlockWithTx(t *testing.T) {
 		Inputs:  inputs,
 		Outputs: outputs,
 	}
+	sig := types.SignTransaction(privKey, tx)
+	tx.Inputs[0].Signature = sig.Bytes()
 
 	block.Transactions = append(block.Transactions, tx)
 
@@ -111,5 +113,39 @@ func TestAddBlockWithTx(t *testing.T) {
 
 	if !reflect.DeepEqual(tx, fetchedTx) {
 		t.Fatalf("tx mismatch. expected: %+v got: %+v", tx, fetchedTx)
+	}
+}
+
+func TestAddBlockWithTxInsufficientFunds(t *testing.T) {
+	var (
+		chain     = NewChain(NewMemoryBlockStore(), NewMemoryTxStore())
+		block     = randomBlock(t, chain)
+		privKey   = crypto.NewPrivateKeyFromString(godSeedStr)
+		recipient = crypto.NewPrivateKey().Public().Address().Bytes()
+	)
+
+	prevTx, err := chain.txStore.Get("b40a25e867b748d2d07401885b936bd6997a5338dfb0cd2e85bba2f6b60e4486")
+	if err != nil {
+		t.Fatal("Failed to fetch tx", err)
+	}
+
+	inputs := []*proto.TxInput{{
+		PrevTxHash:   types.HashTransaction(prevTx),
+		PrevOutIndex: 0,
+		PubKey:       privKey.Public().Bytes(),
+	}}
+	outputs := []*proto.TxOutput{{Amount: 1001, Address: recipient}}
+	tx := &proto.Transaction{
+		Version: 1,
+		Inputs:  inputs,
+		Outputs: outputs,
+	}
+	sig := types.SignTransaction(privKey, tx)
+	tx.Inputs[0].Signature = sig.Bytes()
+
+	block.Transactions = append(block.Transactions, tx)
+
+	if err := chain.AddBlock(block); err == nil {
+		t.Fatal("expected add block to fail", err)
 	}
 }

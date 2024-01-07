@@ -41,9 +41,17 @@ func (hl *HeaderList) Len() int {
 	return len(hl.headers)
 }
 
+type UTXO struct {
+	Hash     string
+	OutIndex int
+	Amount   int64
+	Spent    bool
+}
+
 type Chain struct {
 	blockStore BlockStorer
 	txStore    TxStorer
+	utxoStore  UTXOStorer
 	headers    HeaderList
 }
 
@@ -51,6 +59,7 @@ func NewChain(bs BlockStorer, ts TxStorer) *Chain {
 	chain := &Chain{
 		blockStore: bs,
 		txStore:    ts,
+		utxoStore:  NewMemoryUTXOStore(),
 		headers:    NewHeaderList(),
 	}
 	chain.addBlock(chain.createGenesisBlock())
@@ -76,6 +85,20 @@ func (c *Chain) addBlock(b *proto.Block) error {
 		if err := c.txStore.Put(tx); err != nil {
 			return err
 		}
+
+		hash := hex.EncodeToString(types.HashTransaction(tx))
+		for i, output := range tx.Outputs {
+			utxo := &UTXO{
+				Hash:     hash,
+				OutIndex: i,
+				Amount:   output.Amount,
+				Spent:    false,
+			}
+
+			if err := c.utxoStore.Put(utxo); err != nil {
+				return err
+			}
+		}
 	}
 
 	return c.blockStore.Put(b)
@@ -96,12 +119,12 @@ func (c *Chain) GetBlockByHeight(height int) (*proto.Block, error) {
 }
 
 func (c *Chain) ValidateBlock(b *proto.Block) error {
-	// validate signature
+	// validate block signature
 	if !types.VerifyBlock(b) {
 		return fmt.Errorf("signature verification failed for block: %+v", b)
 	}
 
-	// validate hash
+	// validate block hash
 	currentBlock, err := c.GetBlockByHeight(c.Height())
 	if err != nil {
 		return err
@@ -109,6 +132,49 @@ func (c *Chain) ValidateBlock(b *proto.Block) error {
 	curentBlockHash := types.HashBlock(currentBlock)
 	if !bytes.Equal(curentBlockHash, b.Header.PrevHash) {
 		return fmt.Errorf("prevHash mismatch. expected: %s got: %s", curentBlockHash, b.Header.PrevHash)
+	}
+
+	// validate transactions
+	for _, tx := range b.Transactions {
+		if err := c.validateTransaction(tx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Chain) validateTransaction(tx *proto.Transaction) error {
+	// verify signature
+	if !types.VerifyTransaction(tx) {
+		return fmt.Errorf("invalid transaction signature. tx=%+v", tx)
+	}
+
+	// verify that inputs are not spent
+	var (
+		sumPrevOutputs int64
+		sumOutputs     int64
+	)
+	numInputs := len(tx.Inputs)
+	for i := 0; i < numInputs; i++ {
+		in := tx.Inputs[i]
+		key := fmt.Sprintf("%s_%d", hex.EncodeToString(in.PrevTxHash), in.PrevOutIndex) // double-check
+		utxo, err := c.utxoStore.Get(key)
+		if err != nil {
+			return err
+		}
+		if utxo.Spent {
+			return fmt.Errorf("utxo is already spent. prevHash=%s prevOutIndex=%d", hex.EncodeToString(in.PrevTxHash), in.PrevOutIndex)
+		}
+		sumPrevOutputs += utxo.Amount
+	}
+
+	// verify spendable amount
+	for _, out := range tx.Outputs {
+		sumOutputs += out.Amount
+	}
+	if sumPrevOutputs < sumOutputs {
+		return fmt.Errorf("insufficient funds. need=%d have=%d", sumOutputs, sumPrevOutputs)
 	}
 
 	return nil

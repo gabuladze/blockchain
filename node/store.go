@@ -9,6 +9,45 @@ import (
 	"github.com/gabuladze/blockchain/types"
 )
 
+type UTXOStorer interface {
+	// key is "<Hash>_<outIndex>"
+	Put(utxo *UTXO) error
+	Get(string) (*UTXO, error)
+}
+
+type MemoryUTXOStore struct {
+	lock  sync.RWMutex
+	utxos map[string]*UTXO
+}
+
+func NewMemoryUTXOStore() UTXOStorer {
+	return &MemoryUTXOStore{
+		utxos: make(map[string]*UTXO),
+	}
+}
+
+func (mus *MemoryUTXOStore) Put(u *UTXO) error {
+	mus.lock.Lock()
+	defer mus.lock.Unlock()
+
+	key := fmt.Sprintf("%s_%d", u.Hash, u.OutIndex)
+	mus.utxos[key] = u
+
+	return nil
+}
+
+func (mus *MemoryUTXOStore) Get(key string) (*UTXO, error) {
+	mus.lock.RLock()
+	defer mus.lock.RUnlock()
+
+	utxo, ok := mus.utxos[key]
+	if !ok {
+		return nil, fmt.Errorf("utxo not found. key=%s", key)
+	}
+
+	return utxo, nil
+}
+
 type TxStorer interface {
 	Put(*proto.Transaction) error
 	Get(string) (*proto.Transaction, error)
