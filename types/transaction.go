@@ -1,12 +1,29 @@
 package types
 
 import (
+	"bytes"
 	"crypto/sha256"
 
+	"github.com/cbergoon/merkletree"
 	"github.com/gabuladze/blockchain/crypto"
 	"github.com/gabuladze/blockchain/proto"
 	pb "google.golang.org/protobuf/proto"
 )
+
+type TXHash struct {
+	hash []byte
+}
+
+func NewTXHash(hash []byte) TXHash {
+	return TXHash{hash: hash}
+}
+
+func (t TXHash) CalculateHash() ([]byte, error) {
+	return t.hash, nil
+}
+func (t TXHash) Equals(other merkletree.Content) (bool, error) {
+	return bytes.Equal(t.hash, other.(TXHash).hash), nil
+}
 
 func HashTransaction(tx *proto.Transaction) []byte {
 	b, err := pb.Marshal(tx)

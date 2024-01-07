@@ -3,6 +3,7 @@ module github.com/gabuladze/blockchain
 go 1.21.1
 
 require (
+	github.com/cbergoon/merkletree v0.2.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	golang.org/x/net v0.16.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect

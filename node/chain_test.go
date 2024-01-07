@@ -13,8 +13,7 @@ import (
 
 func randomBlock(t *testing.T, c *Chain) *proto.Block {
 	var (
-		privKey = crypto.NewPrivateKey()
-		block   = utils.RandomBlock()
+		block = utils.RandomBlock()
 	)
 
 	prevBlock, err := c.GetBlockByHeight(c.Height())
@@ -22,7 +21,6 @@ func randomBlock(t *testing.T, c *Chain) *proto.Block {
 		t.Fatal("Failed to get prev block", err)
 	}
 	block.Header.PrevHash = types.HashBlock(prevBlock)
-	types.SignBlock(privKey, block)
 
 	return block
 }
@@ -45,7 +43,9 @@ func TestAddBlock(t *testing.T) {
 	chain := NewChain(NewMemoryBlockStore(), NewMemoryTxStore())
 
 	for i := 0; i < 100; i++ {
+		privKey := crypto.NewPrivateKey()
 		block := randomBlock(t, chain)
+		types.SignBlock(privKey, block)
 
 		if err := chain.AddBlock(block); err != nil {
 			t.Fatal("Failed to add block", err)
@@ -100,6 +100,8 @@ func TestAddBlockWithTx(t *testing.T) {
 	tx.Inputs[0].Signature = sig.Bytes()
 
 	block.Transactions = append(block.Transactions, tx)
+	types.GenerateRootHash(block)
+	types.SignBlock(privKey, block)
 
 	if err := chain.AddBlock(block); err != nil {
 		t.Fatal("Failed to add block", err)
@@ -144,6 +146,8 @@ func TestAddBlockWithTxInsufficientFunds(t *testing.T) {
 	tx.Inputs[0].Signature = sig.Bytes()
 
 	block.Transactions = append(block.Transactions, tx)
+	types.GenerateRootHash(block)
+	types.SignBlock(privKey, block)
 
 	if err := chain.AddBlock(block); err == nil {
 		t.Fatal("expected add block to fail", err)

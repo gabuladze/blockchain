@@ -197,5 +197,6 @@ func (c *Chain) createGenesisBlock() *proto.Block {
 		},
 	}
 	types.SignBlock(privKey, block)
+	types.GenerateRootHash(block)
 	return block
 }
