@@ -74,7 +74,7 @@ func TestAddBlockWithTx(t *testing.T) {
 	var (
 		chain     = NewChain(NewMemoryBlockStore(), NewMemoryTxStore())
 		block     = randomBlock(t, chain)
-		privKey   = crypto.NewPrivateKeyFromString(godSeedStr)
+		privKey   = crypto.NewPrivateKeyFromString(GodSeedStr)
 		recipient = crypto.NewPrivateKey().Public().Address().Bytes()
 	)
 
@@ -131,7 +131,7 @@ func TestAddBlockWithTxInsufficientFunds(t *testing.T) {
 	var (
 		chain     = NewChain(NewMemoryBlockStore(), NewMemoryTxStore())
 		block     = randomBlock(t, chain)
-		privKey   = crypto.NewPrivateKeyFromString(godSeedStr)
+		privKey   = crypto.NewPrivateKeyFromString(GodSeedStr)
 		recipient = crypto.NewPrivateKey().Public().Address().Bytes()
 	)
 

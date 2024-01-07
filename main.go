@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"log"
 	"time"
 
 	"github.com/gabuladze/blockchain/crypto"
 	"github.com/gabuladze/blockchain/node"
 	"github.com/gabuladze/blockchain/proto"
-	"github.com/gabuladze/blockchain/utils"
+	"github.com/gabuladze/blockchain/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -20,12 +21,8 @@ func main() {
 	time.Sleep(time.Second)
 	makeNode(":5000", []string{":4000"}, false)
 
-	go func() {
-		for {
-			time.Sleep(250 * time.Millisecond)
-			makeTransaction()
-		}
-	}()
+	time.Sleep(3 * time.Second)
+	makeTransaction()
 	select {}
 }
 
@@ -52,12 +49,13 @@ func makeTransaction() {
 
 	nc := proto.NewNodeClient(client)
 
-	privKey := crypto.NewPrivateKey()
-	tx := proto.Transaction{
+	privKey := crypto.NewPrivateKeyFromString(node.GodSeedStr)
+	prevHash, _ := hex.DecodeString("b40a25e867b748d2d07401885b936bd6997a5338dfb0cd2e85bba2f6b60e4486")
+	tx := &proto.Transaction{
 		Version: 1,
 		Inputs: []*proto.TxInput{
 			{
-				PrevTxHash:   utils.RandomHash(),
+				PrevTxHash:   prevHash,
 				PrevOutIndex: 0,
 				PubKey:       privKey.Public().Bytes(),
 			},
@@ -69,7 +67,10 @@ func makeTransaction() {
 			},
 		},
 	}
-	_, err = nc.HandleTransaction(context.Background(), &tx)
+	sig := types.SignTransaction(privKey, tx)
+	tx.Inputs[0].Signature = sig.Bytes()
+
+	_, err = nc.HandleTransaction(context.Background(), tx)
 	if err != nil {
 		log.Fatal(err)
 	}

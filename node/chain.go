@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"log"
 
 	"github.com/gabuladze/blockchain/crypto"
 	"github.com/gabuladze/blockchain/proto"
 	"github.com/gabuladze/blockchain/types"
 )
 
-const godSeedStr = "97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e6"
+const GodSeedStr = "97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e6"
 
 type HeaderList struct {
 	headers []*proto.Header
@@ -71,6 +72,7 @@ func (c *Chain) Height() int {
 }
 
 func (c *Chain) AddBlock(b *proto.Block) error {
+	log.Printf("Ading block currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
 	if err := c.ValidateBlock(b); err != nil {
 		return err
 	}
@@ -190,7 +192,7 @@ func (c *Chain) validateTransaction(tx *proto.Transaction) error {
 }
 
 func (c *Chain) createGenesisBlock() *proto.Block {
-	privKey := crypto.NewPrivateKeyFromString(godSeedStr)
+	privKey := crypto.NewPrivateKeyFromString(GodSeedStr)
 	block := &proto.Block{
 		Header: &proto.Header{
 			Version: 1,

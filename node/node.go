@@ -81,6 +81,7 @@ type Node struct {
 	peerLock sync.RWMutex
 	peers    map[proto.NodeClient]*proto.Version
 	mempool  *Mempool
+	chain    *Chain
 
 	proto.UnimplementedNodeServer
 }
@@ -90,6 +91,7 @@ func NewNode(cfg ServerConfig) *Node {
 		ServerConfig: cfg,
 		peers:        make(map[proto.NodeClient]*proto.Version),
 		mempool:      NewMempool(),
+		chain:        NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
 	}
 }
 
@@ -142,10 +144,9 @@ func (n *Node) Handshake(ctx context.Context, v *proto.Version) (*proto.Version,
 }
 
 func (n *Node) HandleTransaction(ctx context.Context, tx *proto.Transaction) (*proto.None, error) {
-	peer, _ := peer.FromContext(ctx)
-	hash := hex.EncodeToString(types.HashTransaction(tx))
-
 	if n.mempool.Add(tx) {
+		peer, _ := peer.FromContext(ctx)
+		hash := hex.EncodeToString(types.HashTransaction(tx))
 		log.Printf("[%s] received tx peer=%s hash=%s\n", n.ListenAddr, peer.LocalAddr, hash)
 		go func() {
 			err := n.broadcast(tx)
@@ -180,6 +181,29 @@ func (n *Node) validatorLoop() {
 
 		txs := n.mempool.Clear()
 		log.Println("VALIDATE BLOCK", "len(txs)=", len(txs))
+
+		lastBlock, err := n.chain.GetBlockByHeight(n.chain.Height())
+		if err != nil {
+			log.Fatal("error fetching last block", err)
+			continue
+		}
+		header := &proto.Header{
+			Version:   1,
+			Height:    int32(n.chain.Height()) + 1,
+			PrevHash:  types.HashBlock(lastBlock),
+			Timestamp: time.Now().UnixNano(),
+		}
+		newBlock := &proto.Block{
+			Header:       header,
+			Transactions: txs,
+		}
+		types.GenerateRootHash(newBlock)
+		types.SignBlock(*n.PrivKey, newBlock)
+		err = n.chain.AddBlock(newBlock)
+		if err != nil {
+			log.Fatal("error when adding block", err)
+			continue
+		}
 	}
 }
 
