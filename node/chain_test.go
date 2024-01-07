@@ -2,6 +2,7 @@ package node
 
 import (
 	"encoding/hex"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -112,9 +113,17 @@ func TestAddBlockWithTx(t *testing.T) {
 	if err != nil {
 		t.Fatal("Failed to fetch tx", err)
 	}
-
 	if !reflect.DeepEqual(tx, fetchedTx) {
 		t.Fatalf("tx mismatch. expected: %+v got: %+v", tx, fetchedTx)
+	}
+
+	key := fmt.Sprintf("%s_%d", hex.EncodeToString(types.HashTransaction(prevTx)), inputs[0].PrevOutIndex)
+	utxo, err := chain.utxoStore.Get(key)
+	if err != nil {
+		t.Fatal("Failed to fetch utxo", err)
+	}
+	if !utxo.Spent {
+		t.Fatalf("expected utxo to be spent. utxo=%+v", utxo)
 	}
 }
 

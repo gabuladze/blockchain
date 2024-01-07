@@ -86,6 +86,15 @@ func (c *Chain) addBlock(b *proto.Block) error {
 			return err
 		}
 
+		for _, input := range tx.Inputs {
+			key := fmt.Sprintf("%s_%d", hex.EncodeToString(input.PrevTxHash), input.PrevOutIndex)
+			utxo, err := c.utxoStore.Get(key)
+			if err != nil {
+				return err
+			}
+			utxo.Spent = true
+		}
+
 		hash := hex.EncodeToString(types.HashTransaction(tx))
 		for i, output := range tx.Outputs {
 			utxo := &UTXO{
