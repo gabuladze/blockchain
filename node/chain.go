@@ -72,7 +72,7 @@ func (c *Chain) Height() int {
 }
 
 func (c *Chain) AddBlock(b *proto.Block) error {
-	log.Printf("Ading block currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
+	log.Printf("Adding block currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
 	if err := c.ValidateBlock(b); err != nil {
 		return err
 	}
