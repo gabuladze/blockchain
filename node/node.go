@@ -120,7 +120,7 @@ func (n *Node) Start(listenAddr string, bootstrapNodes []string) error {
 func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 	n.peerLock.Lock()
 	defer n.peerLock.Unlock()
-	log.Printf("[%s] new peer added. addr = %s peers = %+v\n", n.ListenAddr, cv.ListenAddr, cv.Peers)
+	log.Printf("[%s] new peer added. addr = %s\n", n.ListenAddr, cv.ListenAddr)
 	n.peers[nc] = cv
 
 	go n.bootstrapNetwork(cv.Peers)
