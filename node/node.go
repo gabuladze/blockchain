@@ -187,18 +187,9 @@ func (n *Node) validatorLoop() {
 			log.Fatal("error fetching last block", err)
 			continue
 		}
-		header := &proto.Header{
-			Version:   1,
-			Height:    int32(n.chain.Height()) + 1,
-			PrevHash:  types.HashBlock(lastBlock),
-			Timestamp: time.Now().UnixNano(),
-		}
-		newBlock := &proto.Block{
-			Header:       header,
-			Transactions: txs,
-		}
-		types.GenerateRootHash(newBlock)
-		types.SignBlock(*n.PrivKey, newBlock)
+		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
+		newBlock := types.BuildAndSignBlock(header, txs, *n.PrivKey)
+
 		err = n.chain.AddBlock(newBlock)
 		if err != nil {
 			log.Fatal("error when adding block", err)

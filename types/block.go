@@ -11,6 +11,29 @@ import (
 	pb "google.golang.org/protobuf/proto"
 )
 
+func BuildHeader(version, height int32, prevHash []byte, timestamp int64) *proto.Header {
+	return &proto.Header{
+		Version:   version,
+		Height:    height,
+		PrevHash:  prevHash,
+		Timestamp: timestamp,
+	}
+}
+
+func BuildBlock(header *proto.Header, txs []*proto.Transaction) *proto.Block {
+	return &proto.Block{
+		Header:       header,
+		Transactions: txs,
+	}
+}
+
+func BuildAndSignBlock(header *proto.Header, txs []*proto.Transaction, privKey crypto.PrivateKey) *proto.Block {
+	b := BuildBlock(header, txs)
+	GenerateRootHash(b)
+	SignBlock(privKey, b)
+	return b
+}
+
 // HashBlock returns sha256 of the header.
 func HashBlock(block *proto.Block) []byte {
 	return HashHeader(block.Header)
