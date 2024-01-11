@@ -180,7 +180,6 @@ func (n *Node) validatorLoop() {
 		<-ticker.C
 
 		txs := n.mempool.Clear()
-		log.Println("VALIDATE BLOCK", "len(txs)=", len(txs))
 
 		lastBlock, err := n.chain.GetBlockByHeight(n.chain.Height())
 		if err != nil {
@@ -189,6 +188,8 @@ func (n *Node) validatorLoop() {
 		}
 		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
 		newBlock := types.BuildAndSignBlock(header, txs, *n.PrivKey)
+
+		log.Printf("[%s] validated block. hash=%s txs=%d", n.ListenAddr, hex.EncodeToString(types.HashBlock(newBlock)), len(newBlock.Transactions))
 
 		err = n.chain.AddBlock(newBlock)
 		if err != nil {
