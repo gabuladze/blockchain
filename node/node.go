@@ -19,9 +19,9 @@ import (
 const blockTime = 3 * time.Second
 
 type Node struct {
-	Version proto.Version
-
-	privKey *crypto.PrivateKey
+	version    string
+	listenAddr string
+	privKey    *crypto.PrivateKey
 
 	peerLock sync.RWMutex
 	peers    map[proto.NodeClient]*proto.Version
@@ -33,19 +33,17 @@ type Node struct {
 
 func NewNode(version, listenAddr string, privKey *crypto.PrivateKey) *Node {
 	return &Node{
-		Version: proto.Version{
-			Version:    version,
-			ListenAddr: listenAddr,
-		},
-		privKey: privKey,
-		peers:   make(map[proto.NodeClient]*proto.Version),
-		mempool: NewMempool(),
-		chain:   NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
+		version:    version,
+		listenAddr: listenAddr,
+		privKey:    privKey,
+		peers:      make(map[proto.NodeClient]*proto.Version),
+		mempool:    NewMempool(),
+		chain:      NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
 	}
 }
 
 func (n *Node) Start(bootstrapNodes []string) error {
-	ln, err := net.Listen("tcp", n.Version.ListenAddr)
+	ln, err := net.Listen("tcp", n.listenAddr)
 	if err != nil {
 		return err
 	}
@@ -54,7 +52,7 @@ func (n *Node) Start(bootstrapNodes []string) error {
 	grpcServer := grpc.NewServer(grpcServerOpts...)
 
 	proto.RegisterNodeServer(grpcServer, n)
-	log.Printf("grpc server running on: %s", n.Version.ListenAddr)
+	log.Printf("grpc server running on: %s", n.listenAddr)
 
 	go n.bootstrapNetwork(bootstrapNodes)
 
@@ -68,7 +66,7 @@ func (n *Node) Start(bootstrapNodes []string) error {
 func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 	n.peerLock.Lock()
 	defer n.peerLock.Unlock()
-	log.Printf("[%s] new peer added. addr = %s\n", n.Version.ListenAddr, cv.ListenAddr)
+	log.Printf("[%s] new peer added. addr = %s\n", n.listenAddr, cv.ListenAddr)
 	n.peers[nc] = cv
 
 	go n.bootstrapNetwork(cv.Peers)
@@ -77,7 +75,7 @@ func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 func (n *Node) DeletePeer(nc proto.NodeClient) {
 	n.peerLock.Lock()
 	defer n.peerLock.Unlock()
-	log.Printf("[%s] peer deleted. version = %+v", n.Version.ListenAddr, n.peers[nc])
+	log.Printf("[%s] peer deleted. version = %+v", n.listenAddr, n.peers[nc])
 	delete(n.peers, nc)
 }
 
@@ -88,23 +86,32 @@ func (n *Node) Handshake(ctx context.Context, v *proto.Version) (*proto.Version,
 	}
 	n.AddPeer(nc, v)
 
-	return &n.Version, nil
+	return n.getVersion(), nil
 }
 
 func (n *Node) HandleTransaction(ctx context.Context, tx *proto.Transaction) (*proto.None, error) {
 	if n.mempool.Add(tx) {
 		peer, _ := peer.FromContext(ctx)
 		hash := hex.EncodeToString(types.HashTransaction(tx))
-		log.Printf("[%s] received tx peer=%s hash=%s\n", n.Version.ListenAddr, peer.LocalAddr, hash)
+		log.Printf("[%s] received tx peer=%s hash=%s\n", n.listenAddr, peer.LocalAddr, hash)
 		go func() {
 			err := n.broadcast(tx)
 			if err != nil {
-				log.Fatalf("[%s] broadcast error %v", n.Version.ListenAddr, err)
+				log.Fatalf("[%s] broadcast error %v", n.listenAddr, err)
 			}
 		}()
 	}
 
 	return &proto.None{}, nil
+}
+
+func (n *Node) getVersion() *proto.Version {
+	return &proto.Version{
+		Version:    n.version,
+		Height:     int64(n.chain.Height()),
+		ListenAddr: n.listenAddr,
+		Peers:      n.getPeers(),
+	}
 }
 
 func (n *Node) broadcast(msg any) error {
@@ -121,7 +128,7 @@ func (n *Node) broadcast(msg any) error {
 }
 
 func (n *Node) validatorLoop() {
-	log.Printf("[%s] starting validator loop", n.Version.ListenAddr)
+	log.Printf("[%s] starting validator loop", n.listenAddr)
 	ticker := time.NewTicker(blockTime)
 
 	for {
@@ -137,7 +144,7 @@ func (n *Node) validatorLoop() {
 		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
 		newBlock := types.BuildAndSignBlock(header, txs, *n.privKey)
 
-		log.Printf("[%s] validated block. hash=%s txs=%d", n.Version.ListenAddr, hex.EncodeToString(types.HashBlock(newBlock)), len(newBlock.Transactions))
+		log.Printf("[%s] validated block. hash=%s txs=%d", n.listenAddr, hex.EncodeToString(types.HashBlock(newBlock)), len(newBlock.Transactions))
 
 		err = n.chain.AddBlock(newBlock)
 		if err != nil {
@@ -155,7 +162,7 @@ func (n *Node) bootstrapNetwork(addrs []string) error {
 
 		nc, cv, err := n.dialRemoteNode(addr)
 		if err != nil {
-			log.Printf("[%s] dial error %v", n.Version.ListenAddr, err)
+			log.Printf("[%s] dial error %v", n.listenAddr, err)
 		}
 
 		n.AddPeer(nc, cv)
@@ -164,13 +171,13 @@ func (n *Node) bootstrapNetwork(addrs []string) error {
 }
 
 func (n *Node) dialRemoteNode(addr string) (proto.NodeClient, *proto.Version, error) {
-	log.Printf("[%s] DIALING %s\n", n.Version.ListenAddr, addr)
+	log.Printf("[%s] DIALING %s\n", n.listenAddr, addr)
 	nc, err := makeNodeClient(addr)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	v, err := nc.Handshake(context.Background(), &n.Version)
+	v, err := nc.Handshake(context.Background(), n.getVersion())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -191,7 +198,7 @@ func (n *Node) getPeers() []string {
 }
 
 func (n *Node) canConnectToPeer(addr string) bool {
-	if n.Version.ListenAddr == addr {
+	if n.listenAddr == addr {
 		return false
 	}
 
