@@ -18,25 +18,22 @@ func main() {
 	makeNode(":3000", []string{}, true)
 	time.Sleep(time.Second)
 	makeNode(":4000", []string{":3000"}, false)
-	time.Sleep(time.Second)
-	makeNode(":5000", []string{":4000"}, false)
+	// time.Sleep(time.Second)
+	// makeNode(":5000", []string{":4000"}, false)
 
-	time.Sleep(3 * time.Second)
-	makeTransaction()
+	// time.Sleep(3 * time.Second)
+	// makeTransaction()
 	select {}
 }
 
 func makeNode(listenAddr string, addrs []string, isValidator bool) *node.Node {
-	cfg := node.ServerConfig{
-		ListenAddr: listenAddr,
-		Version:    "chain-0.1",
-	}
+	var privKey *crypto.PrivateKey
 	if isValidator {
-		privKey := crypto.NewPrivateKey()
-		cfg.PrivKey = &privKey
+		p := crypto.NewPrivateKey()
+		privKey = &p
 	}
-	n := node.NewNode(cfg)
-	go n.Start(listenAddr, addrs)
+	n := node.NewNode("chain-0.1", listenAddr, privKey)
+	go n.Start(addrs)
 
 	return n
 }

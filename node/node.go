@@ -18,65 +18,10 @@ import (
 
 const blockTime = 3 * time.Second
 
-type Mempool struct {
-	lock sync.RWMutex
-	txs  map[string]*proto.Transaction
-}
-
-func NewMempool() *Mempool {
-	return &Mempool{
-		txs: make(map[string]*proto.Transaction),
-	}
-}
-
-func (m *Mempool) Len() int {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-	return len(m.txs)
-}
-
-func (m *Mempool) Add(tx *proto.Transaction) bool {
-	if m.Has(tx) {
-		return false
-	}
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	hash := hex.EncodeToString(types.HashTransaction(tx))
-	m.txs[hash] = tx
-	return true
-}
-
-func (m *Mempool) Has(tx *proto.Transaction) bool {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-	hash := hex.EncodeToString(types.HashTransaction(tx))
-	_, ok := m.txs[hash]
-	return ok
-}
-
-func (m *Mempool) Clear() []*proto.Transaction {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	txs := make([]*proto.Transaction, len(m.txs))
-	i := 0
-	for k, v := range m.txs {
-		txs[i] = v
-		delete(m.txs, k)
-		i++
-	}
-	return txs
-}
-
-type ServerConfig struct {
-	Version    string
-	ListenAddr string
-	PrivKey    *crypto.PrivateKey
-}
-
 type Node struct {
-	ServerConfig
+	Version proto.Version
+
+	privKey *crypto.PrivateKey
 
 	peerLock sync.RWMutex
 	peers    map[proto.NodeClient]*proto.Version
@@ -86,18 +31,21 @@ type Node struct {
 	proto.UnimplementedNodeServer
 }
 
-func NewNode(cfg ServerConfig) *Node {
+func NewNode(version, listenAddr string, privKey *crypto.PrivateKey) *Node {
 	return &Node{
-		ServerConfig: cfg,
-		peers:        make(map[proto.NodeClient]*proto.Version),
-		mempool:      NewMempool(),
-		chain:        NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
+		Version: proto.Version{
+			Version:    version,
+			ListenAddr: listenAddr,
+		},
+		privKey: privKey,
+		peers:   make(map[proto.NodeClient]*proto.Version),
+		mempool: NewMempool(),
+		chain:   NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
 	}
 }
 
-func (n *Node) Start(listenAddr string, bootstrapNodes []string) error {
-	n.ListenAddr = listenAddr
-	ln, err := net.Listen("tcp", listenAddr)
+func (n *Node) Start(bootstrapNodes []string) error {
+	ln, err := net.Listen("tcp", n.Version.ListenAddr)
 	if err != nil {
 		return err
 	}
@@ -106,11 +54,11 @@ func (n *Node) Start(listenAddr string, bootstrapNodes []string) error {
 	grpcServer := grpc.NewServer(grpcServerOpts...)
 
 	proto.RegisterNodeServer(grpcServer, n)
-	log.Printf("grpc server running on: %s", listenAddr)
+	log.Printf("grpc server running on: %s", n.Version.ListenAddr)
 
 	go n.bootstrapNetwork(bootstrapNodes)
 
-	if n.PrivKey != nil {
+	if n.privKey != nil {
 		go n.validatorLoop()
 	}
 
@@ -120,7 +68,7 @@ func (n *Node) Start(listenAddr string, bootstrapNodes []string) error {
 func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 	n.peerLock.Lock()
 	defer n.peerLock.Unlock()
-	log.Printf("[%s] new peer added. addr = %s\n", n.ListenAddr, cv.ListenAddr)
+	log.Printf("[%s] new peer added. addr = %s\n", n.Version.ListenAddr, cv.ListenAddr)
 	n.peers[nc] = cv
 
 	go n.bootstrapNetwork(cv.Peers)
@@ -129,7 +77,7 @@ func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 func (n *Node) DeletePeer(nc proto.NodeClient) {
 	n.peerLock.Lock()
 	defer n.peerLock.Unlock()
-	log.Printf("[%s] peer deleted. version = %+v", n.ListenAddr, n.peers[nc])
+	log.Printf("[%s] peer deleted. version = %+v", n.Version.ListenAddr, n.peers[nc])
 	delete(n.peers, nc)
 }
 
@@ -140,18 +88,18 @@ func (n *Node) Handshake(ctx context.Context, v *proto.Version) (*proto.Version,
 	}
 	n.AddPeer(nc, v)
 
-	return n.getVersion(), nil
+	return &n.Version, nil
 }
 
 func (n *Node) HandleTransaction(ctx context.Context, tx *proto.Transaction) (*proto.None, error) {
 	if n.mempool.Add(tx) {
 		peer, _ := peer.FromContext(ctx)
 		hash := hex.EncodeToString(types.HashTransaction(tx))
-		log.Printf("[%s] received tx peer=%s hash=%s\n", n.ListenAddr, peer.LocalAddr, hash)
+		log.Printf("[%s] received tx peer=%s hash=%s\n", n.Version.ListenAddr, peer.LocalAddr, hash)
 		go func() {
 			err := n.broadcast(tx)
 			if err != nil {
-				log.Fatalf("[%s] broadcast error %v", n.ListenAddr, err)
+				log.Fatalf("[%s] broadcast error %v", n.Version.ListenAddr, err)
 			}
 		}()
 	}
@@ -173,7 +121,7 @@ func (n *Node) broadcast(msg any) error {
 }
 
 func (n *Node) validatorLoop() {
-	log.Printf("[%s] starting validator loop", n.ListenAddr)
+	log.Printf("[%s] starting validator loop", n.Version.ListenAddr)
 	ticker := time.NewTicker(blockTime)
 
 	for {
@@ -187,9 +135,9 @@ func (n *Node) validatorLoop() {
 			continue
 		}
 		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
-		newBlock := types.BuildAndSignBlock(header, txs, *n.PrivKey)
+		newBlock := types.BuildAndSignBlock(header, txs, *n.privKey)
 
-		log.Printf("[%s] validated block. hash=%s txs=%d", n.ListenAddr, hex.EncodeToString(types.HashBlock(newBlock)), len(newBlock.Transactions))
+		log.Printf("[%s] validated block. hash=%s txs=%d", n.Version.ListenAddr, hex.EncodeToString(types.HashBlock(newBlock)), len(newBlock.Transactions))
 
 		err = n.chain.AddBlock(newBlock)
 		if err != nil {
@@ -207,7 +155,7 @@ func (n *Node) bootstrapNetwork(addrs []string) error {
 
 		nc, cv, err := n.dialRemoteNode(addr)
 		if err != nil {
-			log.Printf("[%s] dial error %v", n.ListenAddr, err)
+			log.Printf("[%s] dial error %v", n.Version.ListenAddr, err)
 		}
 
 		n.AddPeer(nc, cv)
@@ -216,26 +164,18 @@ func (n *Node) bootstrapNetwork(addrs []string) error {
 }
 
 func (n *Node) dialRemoteNode(addr string) (proto.NodeClient, *proto.Version, error) {
-	log.Printf("[%s] DIALING %s\n", n.ListenAddr, addr)
+	log.Printf("[%s] DIALING %s\n", n.Version.ListenAddr, addr)
 	nc, err := makeNodeClient(addr)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	v, err := nc.Handshake(context.Background(), n.getVersion())
+	v, err := nc.Handshake(context.Background(), &n.Version)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return nc, v, nil
-}
-
-func (n *Node) getVersion() *proto.Version {
-	return &proto.Version{
-		Version:    n.Version,
-		ListenAddr: n.ListenAddr,
-		Peers:      n.getPeers(),
-	}
 }
 
 func (n *Node) getPeers() []string {
@@ -251,7 +191,7 @@ func (n *Node) getPeers() []string {
 }
 
 func (n *Node) canConnectToPeer(addr string) bool {
-	if n.ListenAddr == addr {
+	if n.Version.ListenAddr == addr {
 		return false
 	}
 
