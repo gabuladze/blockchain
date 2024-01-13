@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/gabuladze/blockchain/crypto"
 	"github.com/gabuladze/blockchain/proto"
@@ -50,18 +51,21 @@ type UTXO struct {
 }
 
 type Chain struct {
-	blockStore BlockStorer
-	txStore    TxStorer
-	utxoStore  UTXOStorer
-	headers    HeaderList
+	blockStore   BlockStorer
+	futureBlocks map[int32]*proto.Block
+	fbLock       sync.RWMutex
+	txStore      TxStorer
+	utxoStore    UTXOStorer
+	headers      HeaderList
 }
 
 func NewChain(bs BlockStorer, ts TxStorer) *Chain {
 	chain := &Chain{
-		blockStore: bs,
-		txStore:    ts,
-		utxoStore:  NewMemoryUTXOStore(),
-		headers:    NewHeaderList(),
+		blockStore:   bs,
+		txStore:      ts,
+		utxoStore:    NewMemoryUTXOStore(),
+		headers:      NewHeaderList(),
+		futureBlocks: make(map[int32]*proto.Block),
 	}
 	chain.addBlock(chain.createGenesisBlock())
 	return chain
@@ -72,12 +76,45 @@ func (c *Chain) Height() int {
 }
 
 func (c *Chain) AddBlock(b *proto.Block) error {
+	// if there's a gap between node's chain height and block's height
+	// save the block and process it in the future, once the node has it's parent
+	if c.Height()+1 != int(b.Header.Height) {
+		c.fbLock.Lock()
+		defer c.fbLock.Unlock()
+		_, ok := c.futureBlocks[b.Header.Height]
+		if ok {
+			return nil
+		}
+		c.futureBlocks[b.Header.Height] = b
+		log.Printf(
+			"Saved block for future processing currHeight=%d hash=%s height=%d numTxs=%d",
+			c.Height(), hex.EncodeToString(types.HashBlock(b)), b.Header.Height, len(b.Transactions),
+		)
+		return nil
+	}
 	log.Printf("Adding block currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
 	if err := c.ValidateBlock(b); err != nil {
 		return err
 	}
 
-	return c.addBlock(b)
+	if err := c.addBlock(b); err != nil {
+		return err
+	}
+
+	// try to process future blocks
+	c.fbLock.Lock()
+	defer c.fbLock.Unlock()
+	for height, block := range c.futureBlocks {
+		if int32(c.Height())+1 == height {
+			if err := c.AddBlock(block); err != nil {
+				return err
+			}
+
+			delete(c.futureBlocks, height)
+		}
+	}
+
+	return nil
 }
 
 func (c *Chain) addBlock(b *proto.Block) error {
