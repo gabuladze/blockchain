@@ -9,10 +9,9 @@ import (
 	"github.com/gabuladze/blockchain/types"
 )
 
-type UTXOStorer interface {
-	// key is "<Hash>_<outIndex>"
-	Put(utxo *UTXO) error
-	Get(string) (*UTXO, error)
+type Storer[T any] interface {
+	Put(*T) error
+	Get(string) (*T, error)
 }
 
 type MemoryUTXOStore struct {
@@ -20,7 +19,7 @@ type MemoryUTXOStore struct {
 	utxos map[string]*UTXO
 }
 
-func NewMemoryUTXOStore() UTXOStorer {
+func NewMemoryUTXOStore() Storer[UTXO] {
 	return &MemoryUTXOStore{
 		utxos: make(map[string]*UTXO),
 	}
@@ -30,6 +29,7 @@ func (mus *MemoryUTXOStore) Put(u *UTXO) error {
 	mus.lock.Lock()
 	defer mus.lock.Unlock()
 
+	// key is "<Hash>_<outIndex>"
 	key := fmt.Sprintf("%s_%d", u.Hash, u.OutIndex)
 	mus.utxos[key] = u
 
@@ -48,17 +48,12 @@ func (mus *MemoryUTXOStore) Get(key string) (*UTXO, error) {
 	return utxo, nil
 }
 
-type TxStorer interface {
-	Put(*proto.Transaction) error
-	Get(string) (*proto.Transaction, error)
-}
-
 type MemoryTxStore struct {
 	lock sync.RWMutex
 	txs  map[string]*proto.Transaction
 }
 
-func NewMemoryTxStore() TxStorer {
+func NewMemoryTxStore() Storer[proto.Transaction] {
 	return &MemoryTxStore{
 		txs: make(map[string]*proto.Transaction),
 	}
@@ -85,17 +80,12 @@ func (mts *MemoryTxStore) Get(hash string) (*proto.Transaction, error) {
 	return tx, nil
 }
 
-type BlockStorer interface {
-	Put(*proto.Block) error
-	Get(string) (*proto.Block, error)
-}
-
 type MemoryBlockStore struct {
 	lock   sync.RWMutex
 	blocks map[string]*proto.Block
 }
 
-func NewMemoryBlockStore() BlockStorer {
+func NewMemoryBlockStore() Storer[proto.Block] {
 	return &MemoryBlockStore{
 		blocks: map[string]*proto.Block{},
 	}

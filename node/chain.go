@@ -51,15 +51,15 @@ type UTXO struct {
 }
 
 type Chain struct {
-	blockStore   BlockStorer
+	blockStore   Storer[proto.Block]
 	futureBlocks map[int32]*proto.Block
 	fbLock       sync.RWMutex
-	txStore      TxStorer
-	utxoStore    UTXOStorer
+	txStore      Storer[proto.Transaction]
+	utxoStore    Storer[UTXO]
 	headers      HeaderList
 }
 
-func NewChain(bs BlockStorer, ts TxStorer) *Chain {
+func NewChain(bs Storer[proto.Block], ts Storer[proto.Transaction]) *Chain {
 	chain := &Chain{
 		blockStore:   bs,
 		txStore:      ts,
@@ -82,7 +82,7 @@ func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
 	}
 	// if there's a gap between node's chain height and block's height
 	// save the block and process it in the future, once the node has it's parent
-	if c.Height()+1 != int(b.Header.Height) {
+	if int(b.Header.Height)-c.Height() > 1 {
 		c.fbLock.Lock()
 		defer c.fbLock.Unlock()
 		_, ok := c.futureBlocks[b.Header.Height]
