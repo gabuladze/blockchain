@@ -5,6 +5,7 @@ option go_package = "github.com/gabuladze/blockchain/proto";
 service Node {
     rpc Handshake(Version) returns (Version);
     rpc HandleTransaction(Transaction) returns (None);
+    rpc HandleBlock(Block) returns (None);
 }
 
 message Version {

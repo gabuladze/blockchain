@@ -75,7 +75,11 @@ func (c *Chain) Height() int {
 	return c.headers.Height()
 }
 
-func (c *Chain) AddBlock(b *proto.Block) error {
+func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
+	if c.Height() >= int(b.Header.Height) {
+		log.Printf("Already have block. ignoring currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
+		return false, nil
+	}
 	// if there's a gap between node's chain height and block's height
 	// save the block and process it in the future, once the node has it's parent
 	if c.Height()+1 != int(b.Header.Height) {
@@ -83,22 +87,22 @@ func (c *Chain) AddBlock(b *proto.Block) error {
 		defer c.fbLock.Unlock()
 		_, ok := c.futureBlocks[b.Header.Height]
 		if ok {
-			return nil
+			return false, nil
 		}
 		c.futureBlocks[b.Header.Height] = b
 		log.Printf(
 			"Saved block for future processing currHeight=%d hash=%s height=%d numTxs=%d",
 			c.Height(), hex.EncodeToString(types.HashBlock(b)), b.Header.Height, len(b.Transactions),
 		)
-		return nil
+		return true, nil
 	}
 	log.Printf("Adding block currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
 	if err := c.ValidateBlock(b); err != nil {
-		return err
+		return false, err
 	}
 
 	if err := c.addBlock(b); err != nil {
-		return err
+		return false, err
 	}
 
 	// try to process future blocks
@@ -106,15 +110,15 @@ func (c *Chain) AddBlock(b *proto.Block) error {
 	defer c.fbLock.Unlock()
 	for height, block := range c.futureBlocks {
 		if int32(c.Height())+1 == height {
-			if err := c.AddBlock(block); err != nil {
-				return err
+			if ok, err := c.AddBlock(block); err != nil {
+				return ok, err
 			}
 
 			delete(c.futureBlocks, height)
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 func (c *Chain) addBlock(b *proto.Block) error {

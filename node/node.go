@@ -105,6 +105,25 @@ func (n *Node) HandleTransaction(ctx context.Context, tx *proto.Transaction) (*p
 	return &proto.None{}, nil
 }
 
+func (n *Node) HandleBlock(ctx context.Context, b *proto.Block) (*proto.None, error) {
+	added, err := n.chain.AddBlock(b)
+	if err != nil {
+		log.Fatalf("[%s] error when adding block %v", n.listenAddr, err)
+		return &proto.None{}, err
+	}
+
+	if added {
+		go func() {
+			err := n.broadcast(b)
+			if err != nil {
+				log.Fatalf("[%s] broadcast error %v", n.listenAddr, err)
+			}
+		}()
+	}
+
+	return &proto.None{}, nil
+}
+
 func (n *Node) getVersion() *proto.Version {
 	return &proto.Version{
 		Version:    n.version,
@@ -118,8 +137,11 @@ func (n *Node) broadcast(msg any) error {
 	for peer := range n.peers {
 		switch v := msg.(type) {
 		case *proto.Transaction:
-			_, err := peer.HandleTransaction(context.Background(), v)
-			if err != nil {
+			if _, err := peer.HandleTransaction(context.Background(), v); err != nil {
+				return err
+			}
+		case *proto.Block:
+			if _, err := peer.HandleBlock(context.Background(), v); err != nil {
 				return err
 			}
 		}
@@ -138,7 +160,7 @@ func (n *Node) validatorLoop() {
 
 		lastBlock, err := n.chain.GetBlockByHeight(n.chain.Height())
 		if err != nil {
-			log.Fatal("error fetching last block", err)
+			log.Fatalf("[%s] error fetching last block: %v", n.listenAddr, err)
 			continue
 		}
 		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
@@ -146,9 +168,13 @@ func (n *Node) validatorLoop() {
 
 		log.Printf("[%s] validated block. hash=%s txs=%d", n.listenAddr, hex.EncodeToString(types.HashBlock(newBlock)), len(newBlock.Transactions))
 
-		err = n.chain.AddBlock(newBlock)
-		if err != nil {
-			log.Fatal("error when adding block", err)
+		if _, err := n.chain.AddBlock(newBlock); err != nil {
+			log.Fatalf("[%s] error when adding block %v", n.listenAddr, err)
+			continue
+		}
+
+		if err := n.broadcast(newBlock); err != nil {
+			log.Fatalf("[%s] error when broadcasting block %v", n.listenAddr, err)
 			continue
 		}
 	}

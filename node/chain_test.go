@@ -48,8 +48,12 @@ func TestAddBlock(t *testing.T) {
 		block := randomBlock(t, chain)
 		types.SignBlock(privKey, block)
 
-		if err := chain.AddBlock(block); err != nil {
+		added, err := chain.AddBlock(block)
+		if err != nil {
 			t.Fatal("Failed to add block", err)
+		}
+		if !added {
+			t.Fatal("block not added")
 		}
 
 		blockByHash, err := chain.GetBlockByHash(types.HashBlock(block))
@@ -104,8 +108,12 @@ func TestAddBlockWithTx(t *testing.T) {
 	types.GenerateRootHash(block)
 	types.SignBlock(privKey, block)
 
-	if err := chain.AddBlock(block); err != nil {
+	added, err := chain.AddBlock(block)
+	if err != nil {
 		t.Fatal("Failed to add block", err)
+	}
+	if !added {
+		t.Fatal("block not added")
 	}
 
 	txHash := hex.EncodeToString(types.HashTransaction(tx))
@@ -158,7 +166,8 @@ func TestAddBlockWithTxInsufficientFunds(t *testing.T) {
 	types.GenerateRootHash(block)
 	types.SignBlock(privKey, block)
 
-	if err := chain.AddBlock(block); err == nil {
+	added, err := chain.AddBlock(block)
+	if err == nil || added {
 		t.Fatal("expected add block to fail", err)
 	}
 }
