@@ -14,35 +14,6 @@ import (
 
 const GodSeedStr = "97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e6"
 
-type HeaderList struct {
-	headers []*proto.Header
-}
-
-func NewHeaderList() HeaderList {
-	return HeaderList{
-		headers: []*proto.Header{},
-	}
-}
-
-func (hl *HeaderList) Add(h *proto.Header) {
-	hl.headers = append(hl.headers, h)
-}
-
-func (hl *HeaderList) Get(height int) *proto.Header {
-	if height > hl.Height() {
-		panic("height it too high")
-	}
-	return hl.headers[height]
-}
-
-func (hl *HeaderList) Height() int {
-	return hl.Len() - 1
-}
-
-func (hl *HeaderList) Len() int {
-	return len(hl.headers)
-}
-
 type UTXO struct {
 	Hash     string
 	OutIndex int
@@ -51,20 +22,18 @@ type UTXO struct {
 }
 
 type Chain struct {
-	blockStore   Storer[proto.Block]
+	blockStore   BlockStorer
 	futureBlocks map[int32]*proto.Block
 	fbLock       sync.RWMutex
 	txStore      Storer[proto.Transaction]
 	utxoStore    Storer[UTXO]
-	headers      HeaderList
 }
 
-func NewChain(bs Storer[proto.Block], ts Storer[proto.Transaction]) *Chain {
+func NewChain(bs BlockStorer, ts Storer[proto.Transaction]) *Chain {
 	chain := &Chain{
 		blockStore:   bs,
 		txStore:      ts,
 		utxoStore:    NewMemoryUTXOStore(),
-		headers:      NewHeaderList(),
 		futureBlocks: make(map[int32]*proto.Block),
 	}
 	chain.addBlock(chain.createGenesisBlock())
@@ -72,30 +41,37 @@ func NewChain(bs Storer[proto.Block], ts Storer[proto.Transaction]) *Chain {
 }
 
 func (c *Chain) Height() int {
-	return c.headers.Height()
+	return c.blockStore.Height()
 }
 
 func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
 	if c.Height() >= int(b.Header.Height) {
-		log.Printf("Already have block. ignoring currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
+		lastBlock, err := c.GetBlockByHeight(c.Height())
+		if err != nil {
+			return false, err
+		}
+		log.Printf(
+			"Already have block. ignoring currHeight=%d blockHeight=%d latestHash=%s blockHash=%s numTxs=%d",
+			c.Height(), b.Header.Height, hex.EncodeToString(types.HashBlock(lastBlock)), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions),
+		)
 		return false, nil
 	}
 	// if there's a gap between node's chain height and block's height
 	// save the block and process it in the future, once the node has it's parent
-	if int(b.Header.Height)-c.Height() > 1 {
-		c.fbLock.Lock()
-		defer c.fbLock.Unlock()
-		_, ok := c.futureBlocks[b.Header.Height]
-		if ok {
-			return false, nil
-		}
-		c.futureBlocks[b.Header.Height] = b
-		log.Printf(
-			"Saved block for future processing currHeight=%d hash=%s height=%d numTxs=%d",
-			c.Height(), hex.EncodeToString(types.HashBlock(b)), b.Header.Height, len(b.Transactions),
-		)
-		return true, nil
-	}
+	// if int(b.Header.Height)-c.Height() > 1 {
+	// 	c.fbLock.Lock()
+	// 	defer c.fbLock.Unlock()
+	// 	_, ok := c.futureBlocks[b.Header.Height]
+	// 	if ok {
+	// 		return false, nil
+	// 	}
+	// 	c.futureBlocks[b.Header.Height] = b
+	// 	log.Printf(
+	// 		"Saved block for future processing currHeight=%d hash=%s height=%d numTxs=%d",
+	// 		c.Height(), hex.EncodeToString(types.HashBlock(b)), b.Header.Height, len(b.Transactions),
+	// 	)
+	// 	return true, nil
+	// }
 	log.Printf("Adding block currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
 	if err := c.ValidateBlock(b); err != nil {
 		return false, err
@@ -106,24 +82,22 @@ func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
 	}
 
 	// try to process future blocks
-	c.fbLock.Lock()
-	defer c.fbLock.Unlock()
-	for height, block := range c.futureBlocks {
-		if int32(c.Height())+1 == height {
-			if ok, err := c.AddBlock(block); err != nil {
-				return ok, err
-			}
+	// c.fbLock.Lock()
+	// defer c.fbLock.Unlock()
+	// for height, block := range c.futureBlocks {
+	// 	if int32(c.Height())+1 == height {
+	// 		if ok, err := c.AddBlock(block); err != nil {
+	// 			return ok, err
+	// 		}
 
-			delete(c.futureBlocks, height)
-		}
-	}
+	// 		delete(c.futureBlocks, height)
+	// 	}
+	// }
 
 	return true, nil
 }
 
 func (c *Chain) addBlock(b *proto.Block) error {
-	c.headers.Add(b.Header)
-
 	for _, tx := range b.Transactions {
 		if err := c.txStore.Put(tx); err != nil {
 			return err
@@ -158,14 +132,19 @@ func (c *Chain) addBlock(b *proto.Block) error {
 
 func (c *Chain) GetBlockByHash(hash []byte) (*proto.Block, error) {
 	hashHex := hex.EncodeToString(hash)
-	return c.blockStore.Get(hashHex)
+	return c.blockStore.GetBlock(hashHex)
 }
 
 func (c *Chain) GetBlockByHeight(height int) (*proto.Block, error) {
-	if height > c.headers.Height() {
+	if height > c.Height() {
 		return nil, fmt.Errorf("height too high")
 	}
-	header := c.headers.Get(height)
+
+	header, err := c.blockStore.GetHeader(height)
+	if err != nil {
+		return nil, err
+	}
+
 	hash := types.HashHeader(header)
 	return c.GetBlockByHash(hash)
 }

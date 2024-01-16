@@ -22,6 +22,7 @@ func randomBlock(t *testing.T, c *Chain) *proto.Block {
 		t.Fatal("Failed to get prev block", err)
 	}
 	block.Header.PrevHash = types.HashBlock(prevBlock)
+	block.Header.Height = prevBlock.Header.Height + 1
 
 	return block
 }

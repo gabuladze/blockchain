@@ -3,7 +3,6 @@ package utils
 import (
 	randc "crypto/rand"
 	"io"
-	"math/rand"
 	"time"
 
 	"github.com/gabuladze/blockchain/proto"
@@ -18,7 +17,6 @@ func RandomHash() []byte {
 func RandomBlock() *proto.Block {
 	header := proto.Header{
 		Version:   1,
-		Height:    rand.Int31n(1000),
 		PrevHash:  RandomHash(),
 		RootHash:  RandomHash(),
 		Timestamp: time.Now().UnixNano(),

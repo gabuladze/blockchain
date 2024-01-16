@@ -80,14 +80,23 @@ func (mts *MemoryTxStore) Get(hash string) (*proto.Transaction, error) {
 	return tx, nil
 }
 
-type MemoryBlockStore struct {
-	lock   sync.RWMutex
-	blocks map[string]*proto.Block
+type BlockStorer interface {
+	Put(*proto.Block) error
+	GetBlock(string) (*proto.Block, error)
+	GetHeader(int) (*proto.Header, error)
+	Height() int
 }
 
-func NewMemoryBlockStore() Storer[proto.Block] {
+type MemoryBlockStore struct {
+	lock    sync.RWMutex
+	blocks  map[string]*proto.Block
+	headers []*proto.Header
+}
+
+func NewMemoryBlockStore() BlockStorer {
 	return &MemoryBlockStore{
-		blocks: map[string]*proto.Block{},
+		blocks:  map[string]*proto.Block{},
+		headers: []*proto.Header{},
 	}
 }
 
@@ -96,11 +105,12 @@ func (mbs *MemoryBlockStore) Put(b *proto.Block) error {
 	defer mbs.lock.Unlock()
 
 	hash := hex.EncodeToString(types.HashBlock(b))
+	mbs.headers = append(mbs.headers, b.Header)
 	mbs.blocks[hash] = b
 	return nil
 }
 
-func (mbs *MemoryBlockStore) Get(hash string) (*proto.Block, error) {
+func (mbs *MemoryBlockStore) GetBlock(hash string) (*proto.Block, error) {
 	mbs.lock.RLock()
 	defer mbs.lock.RUnlock()
 
@@ -109,4 +119,18 @@ func (mbs *MemoryBlockStore) Get(hash string) (*proto.Block, error) {
 		return nil, fmt.Errorf("block [%s] not found", hash)
 	}
 	return block, nil
+}
+
+func (mbs *MemoryBlockStore) GetHeader(height int) (*proto.Header, error) {
+	mbs.lock.RLock()
+	defer mbs.lock.RUnlock()
+
+	if height > mbs.Height() {
+		return nil, fmt.Errorf("height too high. height=%d currHeight=%d", height, mbs.Height())
+	}
+	return mbs.headers[height], nil
+}
+
+func (mbs *MemoryBlockStore) Height() int {
+	return len(mbs.headers) - 1
 }
