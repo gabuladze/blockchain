@@ -24,7 +24,7 @@ type UTXO struct {
 type Chain struct {
 	blockStore   BlockStorer
 	futureBlocks map[int32]*proto.Block
-	fbLock       sync.RWMutex
+	fbLock       *sync.RWMutex
 	txStore      Storer[proto.Transaction]
 	utxoStore    Storer[UTXO]
 }
@@ -162,7 +162,7 @@ func (c *Chain) ValidateBlock(b *proto.Block) error {
 	}
 	curentBlockHash := types.HashBlock(currentBlock)
 	if !bytes.Equal(curentBlockHash, b.Header.PrevHash) {
-		return fmt.Errorf("prevHash mismatch. expected: %s got: %s", curentBlockHash, b.Header.PrevHash)
+		return fmt.Errorf("prevHash mismatch. expected: %s got: %s", hex.EncodeToString(curentBlockHash), hex.EncodeToString(b.Header.PrevHash))
 	}
 
 	// validate transactions

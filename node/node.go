@@ -23,7 +23,7 @@ type Node struct {
 	listenAddr string
 	privKey    *crypto.PrivateKey
 
-	peerLock sync.RWMutex
+	peerLock *sync.RWMutex
 	peers    map[proto.NodeClient]*proto.Version
 	mempool  *Mempool
 	chain    *Chain
@@ -36,6 +36,7 @@ func NewNode(version, listenAddr string, privKey *crypto.PrivateKey) *Node {
 		version:    version,
 		listenAddr: listenAddr,
 		privKey:    privKey,
+		peerLock:   &sync.RWMutex{},
 		peers:      make(map[proto.NodeClient]*proto.Version),
 		mempool:    NewMempool(),
 		chain:      NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
@@ -134,6 +135,8 @@ func (n *Node) getVersion() *proto.Version {
 }
 
 func (n *Node) broadcast(msg any) error {
+	n.peerLock.RLock()
+	defer n.peerLock.RUnlock()
 	for peer := range n.peers {
 		switch v := msg.(type) {
 		case *proto.Transaction:
@@ -166,7 +169,7 @@ func (n *Node) validatorLoop() {
 		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
 		newBlock := types.BuildAndSignBlock(header, txs, *n.privKey)
 
-		log.Printf("[%s] validated block. hash=%s txs=%d", n.listenAddr, hex.EncodeToString(types.HashBlock(newBlock)), len(newBlock.Transactions))
+		log.Printf("[%s] validated block. hash=%s height=%d txs=%d", n.listenAddr, hex.EncodeToString(types.HashBlock(newBlock)), newBlock.Header.Height, len(newBlock.Transactions))
 
 		if _, err := n.chain.AddBlock(newBlock); err != nil {
 			log.Fatalf("[%s] error when adding block %v", n.listenAddr, err)

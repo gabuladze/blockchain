@@ -15,12 +15,13 @@ type Storer[T any] interface {
 }
 
 type MemoryUTXOStore struct {
-	lock  sync.RWMutex
+	lock  *sync.RWMutex
 	utxos map[string]*UTXO
 }
 
 func NewMemoryUTXOStore() Storer[UTXO] {
 	return &MemoryUTXOStore{
+		lock:  &sync.RWMutex{},
 		utxos: make(map[string]*UTXO),
 	}
 }
@@ -49,13 +50,14 @@ func (mus *MemoryUTXOStore) Get(key string) (*UTXO, error) {
 }
 
 type MemoryTxStore struct {
-	lock sync.RWMutex
+	lock *sync.RWMutex
 	txs  map[string]*proto.Transaction
 }
 
 func NewMemoryTxStore() Storer[proto.Transaction] {
 	return &MemoryTxStore{
-		txs: make(map[string]*proto.Transaction),
+		lock: &sync.RWMutex{},
+		txs:  make(map[string]*proto.Transaction),
 	}
 }
 
@@ -88,13 +90,14 @@ type BlockStorer interface {
 }
 
 type MemoryBlockStore struct {
-	lock    sync.RWMutex
+	lock    *sync.RWMutex
 	blocks  map[string]*proto.Block
 	headers []*proto.Header
 }
 
 func NewMemoryBlockStore() BlockStorer {
 	return &MemoryBlockStore{
+		lock:    &sync.RWMutex{},
 		blocks:  map[string]*proto.Block{},
 		headers: []*proto.Header{},
 	}
@@ -132,5 +135,7 @@ func (mbs *MemoryBlockStore) GetHeader(height int) (*proto.Header, error) {
 }
 
 func (mbs *MemoryBlockStore) Height() int {
+	mbs.lock.RLock()
+	defer mbs.lock.RUnlock()
 	return len(mbs.headers) - 1
 }

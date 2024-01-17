@@ -9,13 +9,14 @@ import (
 )
 
 type Mempool struct {
-	lock sync.RWMutex
+	lock *sync.RWMutex
 	txs  map[string]*proto.Transaction
 }
 
 func NewMempool() *Mempool {
 	return &Mempool{
-		txs: make(map[string]*proto.Transaction),
+		lock: &sync.RWMutex{},
+		txs:  make(map[string]*proto.Transaction),
 	}
 }
 
