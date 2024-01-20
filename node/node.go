@@ -28,6 +28,10 @@ type Node struct {
 	mempool  *Mempool
 	chain    *Chain
 
+	addBlockCh       chan *proto.Block
+	broadcastBlockCh chan *proto.Block
+	errCh            chan error
+
 	proto.UnimplementedNodeServer
 }
 
@@ -40,6 +44,10 @@ func NewNode(version, listenAddr string, privKey *crypto.PrivateKey) *Node {
 		peers:      make(map[proto.NodeClient]*proto.Version),
 		mempool:    NewMempool(),
 		chain:      NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
+
+		addBlockCh:       make(chan *proto.Block),
+		broadcastBlockCh: make(chan *proto.Block),
+		errCh:            make(chan error),
 	}
 }
 
@@ -60,6 +68,19 @@ func (n *Node) Start(bootstrapNodes []string) error {
 	if n.privKey != nil {
 		go n.validatorLoop()
 	}
+
+	go n.chain.StartBlockReceiver(n.addBlockCh, n.broadcastBlockCh, n.errCh)
+
+	go func() {
+		for {
+			select {
+			case broadcastBlk := <-n.broadcastBlockCh:
+				go n.broadcast(broadcastBlk)
+			case errMsg := <-n.errCh:
+				log.Fatalf("[%s] error: %s\n", n.listenAddr, errMsg)
+			}
+		}
+	}()
 
 	return grpcServer.Serve(ln)
 }
@@ -107,21 +128,7 @@ func (n *Node) HandleTransaction(ctx context.Context, tx *proto.Transaction) (*p
 }
 
 func (n *Node) HandleBlock(ctx context.Context, b *proto.Block) (*proto.None, error) {
-	added, err := n.chain.AddBlock(b)
-	if err != nil {
-		log.Fatalf("[%s] error when adding block %v", n.listenAddr, err)
-		return &proto.None{}, err
-	}
-
-	if added {
-		go func() {
-			err := n.broadcast(b)
-			if err != nil {
-				log.Fatalf("[%s] broadcast error %v", n.listenAddr, err)
-			}
-		}()
-	}
-
+	n.addBlockCh <- b
 	return &proto.None{}, nil
 }
 

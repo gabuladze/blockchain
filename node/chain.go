@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"sync"
 
 	"github.com/gabuladze/blockchain/crypto"
 	"github.com/gabuladze/blockchain/proto"
@@ -22,22 +21,34 @@ type UTXO struct {
 }
 
 type Chain struct {
-	blockStore   BlockStorer
-	futureBlocks map[int32]*proto.Block
-	fbLock       *sync.RWMutex
-	txStore      Storer[proto.Transaction]
-	utxoStore    Storer[UTXO]
+	blockStore BlockStorer
+	// futureBlocks map[int32]*proto.Block
+	// fbLock       *sync.RWMutex
+	txStore   Storer[proto.Transaction]
+	utxoStore Storer[UTXO]
 }
 
 func NewChain(bs BlockStorer, ts Storer[proto.Transaction]) *Chain {
 	chain := &Chain{
-		blockStore:   bs,
-		txStore:      ts,
-		utxoStore:    NewMemoryUTXOStore(),
-		futureBlocks: make(map[int32]*proto.Block),
+		blockStore: bs,
+		txStore:    ts,
+		utxoStore:  NewMemoryUTXOStore(),
+		// futureBlocks: make(map[int32]*proto.Block),
 	}
 	chain.addBlock(chain.createGenesisBlock())
 	return chain
+}
+
+func (c *Chain) StartBlockReceiver(addBlockCh chan *proto.Block, broadcastBlockCh chan *proto.Block, errChan chan error) {
+	for b := range addBlockCh {
+		added, err := c.AddBlock(b)
+		if err != nil {
+			errChan <- err
+		}
+		if added {
+			broadcastBlockCh <- b
+		}
+	}
 }
 
 func (c *Chain) Height() int {
