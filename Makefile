@@ -1,8 +1,8 @@
 build:
-	@go build -o bin/blockchain
+	@go build -o bin/node ./cmd/node.go
 
 run: build
-	@./bin/blockchain
+	@./bin/node
 
 test:
 	@go test -v ./... -count=1

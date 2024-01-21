@@ -1,0 +1,11 @@
+version: "3"
+services:
+  validator-1:
+    build: .
+    container_name: bootnode
+    command:
+      - "-grpc.addr=:3000"
+      - "-crypto.seed=97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e1"
+      - "-validator=true"
+    expose:
+      - "3000"
