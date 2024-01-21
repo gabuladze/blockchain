@@ -1,0 +1,1 @@
+Simple utxo blockchain written in go with primitive transaction & block propagation and validation mechanisms.
