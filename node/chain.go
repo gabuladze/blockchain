@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/gabuladze/blockchain/crypto"
 	"github.com/gabuladze/blockchain/proto"
@@ -61,9 +61,13 @@ func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		log.Printf(
-			"Already have block. ignoring currHeight=%d blockHeight=%d latestHash=%s blockHash=%s numTxs=%d",
-			c.Height(), b.Header.Height, hex.EncodeToString(types.HashBlock(lastBlock)), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions),
+		slog.Info(
+			"Already have block. ignoring",
+			slog.Int("chainHeight", c.Height()),
+			slog.Int("blockHeight", int(b.Header.Height)),
+			slog.String("latestHash", hex.EncodeToString(types.HashBlock(lastBlock))),
+			slog.String("blockHash", hex.EncodeToString(types.HashBlock(b))),
+			slog.Int("txs", len(b.Transactions)),
 		)
 		return false, nil
 	}
@@ -83,7 +87,12 @@ func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
 	// 	)
 	// 	return true, nil
 	// }
-	log.Printf("Adding block currHeight=%d hash=%s numTxs=%d", c.Height(), hex.EncodeToString(types.HashBlock(b)), len(b.Transactions))
+	slog.Info(
+		"Adding block",
+		slog.Int("chainHeight", c.Height()),
+		slog.String("hash", hex.EncodeToString(types.HashBlock(b))),
+		slog.Int("txs", len(b.Transactions)),
+	)
 	if err := c.ValidateBlock(b); err != nil {
 		return false, err
 	}

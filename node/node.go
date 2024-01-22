@@ -3,7 +3,7 @@ package node
 import (
 	"context"
 	"encoding/hex"
-	"log"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -61,7 +61,7 @@ func (n *Node) Start(bootstrapNodes []string) error {
 	grpcServer := grpc.NewServer(grpcServerOpts...)
 
 	proto.RegisterNodeServer(grpcServer, n)
-	log.Printf("grpc server running on: %s", n.listenAddr)
+	slog.Info("started grpc server", slog.String("listenAddr", n.listenAddr))
 
 	go n.bootstrapNetwork(bootstrapNodes)
 
@@ -77,7 +77,7 @@ func (n *Node) Start(bootstrapNodes []string) error {
 			case broadcastBlk := <-n.broadcastBlockCh:
 				go n.broadcast(broadcastBlk)
 			case errMsg := <-n.errCh:
-				log.Fatalf("[%s] error: %s\n", n.listenAddr, errMsg)
+				slog.Error("error when adding block", errMsg)
 			}
 		}
 	}()
@@ -88,17 +88,10 @@ func (n *Node) Start(bootstrapNodes []string) error {
 func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 	n.peerLock.Lock()
 	defer n.peerLock.Unlock()
-	log.Printf("[%s] new peer added. addr = %s\n", n.listenAddr, cv.ListenAddr)
+	slog.Info("new peer added", slog.String("addr", cv.ListenAddr))
 	n.peers[nc] = cv
 
 	go n.bootstrapNetwork(cv.Peers)
-}
-
-func (n *Node) DeletePeer(nc proto.NodeClient) {
-	n.peerLock.Lock()
-	defer n.peerLock.Unlock()
-	log.Printf("[%s] peer deleted. version = %+v", n.listenAddr, n.peers[nc])
-	delete(n.peers, nc)
 }
 
 func (n *Node) Handshake(ctx context.Context, v *proto.Version) (*proto.Version, error) {
@@ -115,11 +108,11 @@ func (n *Node) HandleTransaction(ctx context.Context, tx *proto.Transaction) (*p
 	if n.mempool.Add(tx) {
 		peer, _ := peer.FromContext(ctx)
 		hash := hex.EncodeToString(types.HashTransaction(tx))
-		log.Printf("[%s] received tx peer=%s hash=%s\n", n.listenAddr, peer.LocalAddr, hash)
+		slog.Info("received tx", slog.String("peer", peer.LocalAddr.String()), slog.String("hash", hash))
 		go func() {
 			err := n.broadcast(tx)
 			if err != nil {
-				log.Fatalf("[%s] broadcast error %v", n.listenAddr, err)
+				slog.Error("broadcast error", err)
 			}
 		}()
 	}
@@ -160,7 +153,7 @@ func (n *Node) broadcast(msg any) error {
 }
 
 func (n *Node) validatorLoop() {
-	log.Printf("[%s] starting validator loop", n.listenAddr)
+	slog.Info("starting validator loop")
 	ticker := time.NewTicker(blockTime)
 
 	for {
@@ -170,21 +163,26 @@ func (n *Node) validatorLoop() {
 
 		lastBlock, err := n.chain.GetBlockByHeight(n.chain.Height())
 		if err != nil {
-			log.Fatalf("[%s] error fetching last block: %v", n.listenAddr, err)
+			slog.Error("error fetching last block", err)
 			continue
 		}
 		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
 		newBlock := types.BuildAndSignBlock(header, txs, *n.privKey)
 
-		log.Printf("[%s] validated block. hash=%s height=%d txs=%d", n.listenAddr, hex.EncodeToString(types.HashBlock(newBlock)), newBlock.Header.Height, len(newBlock.Transactions))
+		slog.Info(
+			"validated block",
+			slog.String("hash", hex.EncodeToString(types.HashBlock(newBlock))),
+			slog.Int("height", int(newBlock.Header.Height)),
+			slog.Int("txs", len(newBlock.Transactions)),
+		)
 
 		if _, err := n.chain.AddBlock(newBlock); err != nil {
-			log.Fatalf("[%s] error when adding block %v", n.listenAddr, err)
+			slog.Error("error when adding block", err)
 			continue
 		}
 
 		if err := n.broadcast(newBlock); err != nil {
-			log.Fatalf("[%s] error when broadcasting block %v", n.listenAddr, err)
+			slog.Error("error when broadcasting block", err)
 			continue
 		}
 	}
@@ -198,7 +196,7 @@ func (n *Node) bootstrapNetwork(addrs []string) error {
 
 		nc, cv, err := n.dialRemoteNode(addr)
 		if err != nil {
-			log.Printf("[%s] dial error %v", n.listenAddr, err)
+			slog.Error("dial error", err)
 		}
 
 		n.AddPeer(nc, cv)
@@ -207,7 +205,6 @@ func (n *Node) bootstrapNetwork(addrs []string) error {
 }
 
 func (n *Node) dialRemoteNode(addr string) (proto.NodeClient, *proto.Version, error) {
-	log.Printf("[%s] DIALING %s\n", n.listenAddr, addr)
 	nc, err := makeNodeClient(addr)
 	if err != nil {
 		return nil, nil, err

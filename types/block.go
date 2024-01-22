@@ -3,7 +3,7 @@ package types
 import (
 	"bytes"
 	"crypto/sha256"
-	"log"
+	"log/slog"
 
 	"github.com/cbergoon/merkletree"
 	"github.com/gabuladze/blockchain/crypto"
@@ -76,7 +76,7 @@ func VerifyBlock(b *proto.Block) bool {
 		}
 		t, err := GenerateMerkleTree(b)
 		if err != nil {
-			log.Fatal("merkle tree generation failed", err)
+			slog.Error("merkle tree generation failed", err)
 			return false
 		}
 		mr := t.MerkleRoot()
