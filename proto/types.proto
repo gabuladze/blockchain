@@ -6,6 +6,17 @@ service Node {
     rpc Handshake(Version) returns (Version);
     rpc HandleTransaction(Transaction) returns (None);
     rpc HandleBlock(Block) returns (None);
+    rpc FetchBlocks(FetchBlocksRequest) returns (FetchBlocksResponse);
+}
+
+message FetchBlocksRequest {
+    int64 from = 1;
+    int64 to = 2; 
+}
+
+message FetchBlocksResponse {
+    repeated Block blocks = 1;
+    int64 currentHeight = 2;
 }
 
 message Version {
@@ -26,7 +37,7 @@ message Block {
 
 message Header {
     int32 version = 1;
-    int32 height = 2;
+    int64 height = 2;
     bytes prevHash = 3;
     bytes rootHash = 4; // merkle root of txs
     int64 timestamp = 5;

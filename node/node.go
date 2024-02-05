@@ -125,10 +125,37 @@ func (n *Node) HandleBlock(ctx context.Context, b *proto.Block) (*proto.None, er
 	return &proto.None{}, nil
 }
 
+func (n *Node) FetchBlocks(ctx context.Context, r *proto.FetchBlocksRequest) (*proto.FetchBlocksResponse, error) {
+	blocks, err := n.chain.GetBlocks(r.From, r.To)
+	if err != nil {
+		return nil, err
+	}
+	resp := &proto.FetchBlocksResponse{
+		Blocks:        blocks,
+		CurrentHeight: n.chain.Height(),
+	}
+	return resp, nil
+}
+
+func (n *Node) syncBlocks(peer proto.NodeClient, toHeight int64) {
+	fbr := &proto.FetchBlocksRequest{
+		From: n.chain.Height() + 1,
+		To:   toHeight,
+	}
+
+	resp, err := peer.FetchBlocks(context.Background(), fbr)
+	if err != nil {
+		slog.Error("sync error", err)
+	}
+	for _, block := range resp.Blocks {
+		n.HandleBlock(context.Background(), block)
+	}
+}
+
 func (n *Node) getVersion() *proto.Version {
 	return &proto.Version{
 		Version:    n.version,
-		Height:     int64(n.chain.Height()),
+		Height:     n.chain.Height(),
 		ListenAddr: n.listenAddr,
 		Peers:      n.getPeers(),
 	}
@@ -166,7 +193,7 @@ func (n *Node) validatorLoop() {
 			slog.Error("error fetching last block", err)
 			continue
 		}
-		header := types.BuildHeader(1, int32(n.chain.Height())+1, types.HashBlock(lastBlock), time.Now().UnixNano())
+		header := types.BuildHeader(1, n.chain.Height()+1, types.HashBlock(lastBlock), time.Now().UnixNano())
 		newBlock := types.BuildAndSignBlock(header, txs, *n.privKey)
 
 		slog.Info(
@@ -213,6 +240,12 @@ func (n *Node) dialRemoteNode(addr string) (proto.NodeClient, *proto.Version, er
 	v, err := nc.Handshake(context.Background(), n.getVersion())
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// compare heights start sync if needed
+	slog.Info("height diff", "remote", v.Height, "local", n.chain.blockStore.Height())
+	if v.Height-n.chain.blockStore.Height() > 1 {
+		go n.syncBlocks(nc, v.Height)
 	}
 
 	return nc, v, nil

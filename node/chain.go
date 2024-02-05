@@ -51,19 +51,19 @@ func (c *Chain) StartBlockReceiver(addBlockCh chan *proto.Block, broadcastBlockC
 	}
 }
 
-func (c *Chain) Height() int {
+func (c *Chain) Height() int64 {
 	return c.blockStore.Height()
 }
 
 func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
-	if c.Height() >= int(b.Header.Height) {
+	if c.Height() >= b.Header.Height {
 		lastBlock, err := c.GetBlockByHeight(c.Height())
 		if err != nil {
 			return false, err
 		}
 		slog.Info(
 			"Already have block. ignoring",
-			slog.Int("chainHeight", c.Height()),
+			slog.Int64("chainHeight", c.Height()),
 			slog.Int("blockHeight", int(b.Header.Height)),
 			slog.String("latestHash", hex.EncodeToString(types.HashBlock(lastBlock))),
 			slog.String("blockHash", hex.EncodeToString(types.HashBlock(b))),
@@ -89,7 +89,7 @@ func (c *Chain) AddBlock(b *proto.Block) (bool, error) {
 	// }
 	slog.Info(
 		"Adding block",
-		slog.Int("chainHeight", c.Height()),
+		slog.Int64("chainHeight", c.Height()),
 		slog.String("hash", hex.EncodeToString(types.HashBlock(b))),
 		slog.Int("txs", len(b.Transactions)),
 	)
@@ -155,7 +155,7 @@ func (c *Chain) GetBlockByHash(hash []byte) (*proto.Block, error) {
 	return c.blockStore.GetBlock(hashHex)
 }
 
-func (c *Chain) GetBlockByHeight(height int) (*proto.Block, error) {
+func (c *Chain) GetBlockByHeight(height int64) (*proto.Block, error) {
 	if height > c.Height() {
 		return nil, fmt.Errorf("height too high")
 	}
@@ -167,6 +167,30 @@ func (c *Chain) GetBlockByHeight(height int) (*proto.Block, error) {
 
 	hash := types.HashHeader(header)
 	return c.GetBlockByHash(hash)
+}
+
+func (c *Chain) GetBlocks(fromHeight, toHeight int64) ([]*proto.Block, error) {
+	if fromHeight > c.Height() || toHeight > c.Height() {
+		return nil, fmt.Errorf("height too high")
+	}
+
+	blocks := make([]*proto.Block, toHeight-fromHeight+1)
+	for i, h := 0, fromHeight; h <= toHeight; i, h = i+1, h+1 {
+		header, err := c.blockStore.GetHeader(h)
+		if err != nil {
+			return nil, err
+		}
+
+		hash := types.HashHeader(header)
+		b, err := c.GetBlockByHash(hash)
+		if err != nil {
+			return nil, err
+		}
+
+		blocks[i] = b
+	}
+
+	return blocks, nil
 }
 
 func (c *Chain) ValidateBlock(b *proto.Block) error {

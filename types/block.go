@@ -11,7 +11,7 @@ import (
 	pb "google.golang.org/protobuf/proto"
 )
 
-func BuildHeader(version, height int32, prevHash []byte, timestamp int64) *proto.Header {
+func BuildHeader(version int32, height int64, prevHash []byte, timestamp int64) *proto.Header {
 	return &proto.Header{
 		Version:   version,
 		Height:    height,

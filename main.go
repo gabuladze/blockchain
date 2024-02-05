@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/gabuladze/blockchain/crypto"
@@ -16,7 +18,7 @@ import (
 
 func main() {
 	makeNode(":3000", []string{}, true)
-	time.Sleep(time.Second)
+	time.Sleep(10 * time.Second)
 	makeNode(":4000", []string{":3000"}, false)
 	// time.Sleep(time.Second)
 	// makeNode(":5000", []string{":4000"}, false)
@@ -27,6 +29,10 @@ func main() {
 }
 
 func makeNode(listenAddr string, addrs []string, isValidator bool) *node.Node {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger = logger.With("addr", listenAddr)
+	slog.SetDefault(logger)
+
 	var privKey *crypto.PrivateKey
 	if isValidator {
 		p := crypto.NewPrivateKey()

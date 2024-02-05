@@ -85,8 +85,8 @@ func (mts *MemoryTxStore) Get(hash string) (*proto.Transaction, error) {
 type BlockStorer interface {
 	Put(*proto.Block) error
 	GetBlock(string) (*proto.Block, error)
-	GetHeader(int) (*proto.Header, error)
-	Height() int
+	GetHeader(int64) (*proto.Header, error)
+	Height() int64
 }
 
 type MemoryBlockStore struct {
@@ -124,7 +124,7 @@ func (mbs *MemoryBlockStore) GetBlock(hash string) (*proto.Block, error) {
 	return block, nil
 }
 
-func (mbs *MemoryBlockStore) GetHeader(height int) (*proto.Header, error) {
+func (mbs *MemoryBlockStore) GetHeader(height int64) (*proto.Header, error) {
 	mbs.lock.RLock()
 	defer mbs.lock.RUnlock()
 
@@ -134,8 +134,8 @@ func (mbs *MemoryBlockStore) GetHeader(height int) (*proto.Header, error) {
 	return mbs.headers[height], nil
 }
 
-func (mbs *MemoryBlockStore) Height() int {
+func (mbs *MemoryBlockStore) Height() int64 {
 	mbs.lock.RLock()
 	defer mbs.lock.RUnlock()
-	return len(mbs.headers) - 1
+	return int64(len(mbs.headers) - 1)
 }
