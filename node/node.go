@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/gabuladze/blockchain/crypto"
@@ -22,11 +21,9 @@ type Node struct {
 	version    string
 	listenAddr string
 	privKey    *crypto.PrivateKey
-
-	peerLock *sync.RWMutex
-	peers    map[proto.NodeClient]*proto.Version
-	mempool  *Mempool
-	chain    *Chain
+	peers      *PeerStore
+	mempool    *Mempool
+	chain      *Chain
 
 	addBlockCh       chan *proto.Block
 	broadcastBlockCh chan *proto.Block
@@ -40,8 +37,7 @@ func NewNode(version, listenAddr string, privKey *crypto.PrivateKey) *Node {
 		version:    version,
 		listenAddr: listenAddr,
 		privKey:    privKey,
-		peerLock:   &sync.RWMutex{},
-		peers:      make(map[proto.NodeClient]*proto.Version),
+		peers:      NewPeerStore(),
 		mempool:    NewMempool(),
 		chain:      NewChain(NewMemoryBlockStore(), NewMemoryTxStore()),
 
@@ -86,10 +82,7 @@ func (n *Node) Start(bootstrapNodes []string) error {
 }
 
 func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
-	n.peerLock.Lock()
-	defer n.peerLock.Unlock()
-	slog.Info("new peer added", slog.String("addr", cv.ListenAddr))
-	n.peers[nc] = cv
+	n.peers.Add(nc, cv)
 
 	go n.bootstrapNetwork(cv.Peers)
 }
@@ -157,14 +150,13 @@ func (n *Node) getVersion() *proto.Version {
 		Version:    n.version,
 		Height:     n.chain.Height(),
 		ListenAddr: n.listenAddr,
-		Peers:      n.getPeers(),
+		Peers:      n.peers.GetAddressList(),
 	}
 }
 
 func (n *Node) broadcast(msg any) error {
-	n.peerLock.RLock()
-	defer n.peerLock.RUnlock()
-	for peer := range n.peers {
+	peers := n.peers.GetPeers()
+	for peer := range peers {
 		switch v := msg.(type) {
 		case *proto.Transaction:
 			if _, err := peer.HandleTransaction(context.Background(), v); err != nil {
@@ -251,24 +243,12 @@ func (n *Node) dialRemoteNode(addr string) (proto.NodeClient, *proto.Version, er
 	return nc, v, nil
 }
 
-func (n *Node) getPeers() []string {
-	n.peerLock.RLock()
-	defer n.peerLock.RUnlock()
-
-	pList := []string{}
-	for _, version := range n.peers {
-		pList = append(pList, version.ListenAddr)
-	}
-
-	return pList
-}
-
 func (n *Node) canConnectToPeer(addr string) bool {
 	if n.listenAddr == addr {
 		return false
 	}
 
-	for _, version := range n.peers {
+	for _, version := range n.peers.GetPeers() {
 		if version.ListenAddr == addr {
 			return false
 		}
