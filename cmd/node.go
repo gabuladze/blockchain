@@ -9,7 +9,8 @@ import (
 )
 
 func main() {
-	listenAddr := flag.String("grpc.addr", ":3000", "Listen address for GRPC server.")
+	grpcAddr := flag.String("grpc.addr", "0.0.0.0", "Address for GRPC server.")
+	grpcPort := flag.String("grpc.port", "3000", "Port for GRPC server.")
 	bootnodes := flag.String("grpc.bootnodes", "", "Comma separated list of bootnode addresses.")
 	cryptoSeed := flag.String("crypto.seed", "97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e1", "Seed string for generating private key.")
 	isValidator := flag.Bool("validator", false, "Start node as a validator.")
@@ -20,17 +21,17 @@ func main() {
 		bootnodeList = strings.Split(*bootnodes, ",")
 	}
 
-	makeNode(*listenAddr, bootnodeList, *cryptoSeed, *isValidator)
+	makeNode(*grpcAddr, *grpcPort, bootnodeList, *cryptoSeed, *isValidator)
 	select {}
 }
 
-func makeNode(listenAddr string, addrs []string, cryptoSeed string, isValidator bool) *node.Node {
+func makeNode(grpcAddr, grpcPort string, addrs []string, cryptoSeed string, isValidator bool) *node.Node {
 	var privKey *crypto.PrivateKey
 	if isValidator {
 		p := crypto.NewPrivateKeyFromString(cryptoSeed)
 		privKey = &p
 	}
-	n := node.NewNode("chain-0.1", listenAddr, privKey)
+	n := node.NewNode("chain-0.1", grpcAddr, grpcPort, privKey)
 	go n.Start(addrs)
 
 	return n

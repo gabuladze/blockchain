@@ -9,7 +9,8 @@ services:
       retries: 3
       start_period: 5s
     command:
-      - "-grpc.addr=:3000"
+      - "-grpc.addr=0.0.0.0"
+      - "-grpc.port=3000"
       - "-crypto.seed=97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e1"
     expose:
       - "3000"
@@ -20,10 +21,32 @@ services:
     depends_on:
       bootnode:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "4000"]
+      interval: 2s
+      retries: 3
+      start_period: 5s
     command:
-      - "-grpc.addr=:4000"
+      - "-grpc.addr=0.0.0.0"
+      - "-grpc.port=4000"
       - "-grpc.bootnodes=bootnode:3000"
       - "-crypto.seed=97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e2"
       - "-validator=true"
     expose:
       - "4000"
+
+  rpc-node:
+    build: .
+    container_name: rpc-node
+    depends_on:
+      bootnode:
+        condition: service_healthy
+      validator:
+        condition: service_healthy
+    command:
+      - "-grpc.addr=0.0.0.0"
+      - "-grpc.port=5000"
+      - "-grpc.bootnodes=bootnode:3000,validator:4000"
+      - "-crypto.seed=97d3a71712a442f6345e16df34ecec93c3f6666dc84cee739c2e95a878ea99e3"
+    expose:
+      - "5000"

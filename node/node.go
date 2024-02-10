@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net"
 	"time"
@@ -20,6 +21,8 @@ const blockTime = 3 * time.Second
 type Node struct {
 	version    string
 	listenAddr string
+	addr       string
+	port       string
 	privKey    *crypto.PrivateKey
 	peers      *PeerStore
 	mempool    *Mempool
@@ -32,10 +35,12 @@ type Node struct {
 	proto.UnimplementedNodeServer
 }
 
-func NewNode(version, listenAddr string, privKey *crypto.PrivateKey) *Node {
+func NewNode(version, listenAddr, port string, privKey *crypto.PrivateKey) *Node {
 	return &Node{
 		version:    version,
 		listenAddr: listenAddr,
+		port:       port,
+		addr:       fmt.Sprintf("%s:%s", getOutboundIP(), port),
 		privKey:    privKey,
 		peers:      NewPeerStore(),
 		mempool:    NewMempool(),
@@ -48,7 +53,8 @@ func NewNode(version, listenAddr string, privKey *crypto.PrivateKey) *Node {
 }
 
 func (n *Node) Start(bootstrapNodes []string) error {
-	ln, err := net.Listen("tcp", n.listenAddr)
+	listenAddr := fmt.Sprintf("%s:%s", n.listenAddr, n.port)
+	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return err
 	}
@@ -57,7 +63,7 @@ func (n *Node) Start(bootstrapNodes []string) error {
 	grpcServer := grpc.NewServer(grpcServerOpts...)
 
 	proto.RegisterNodeServer(grpcServer, n)
-	slog.Info("started grpc server", slog.String("listenAddr", n.listenAddr))
+	slog.Info("started grpc server", slog.String("listenAddr", listenAddr))
 
 	go n.bootstrapNetwork(bootstrapNodes)
 
@@ -88,11 +94,11 @@ func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 }
 
 func (n *Node) Handshake(ctx context.Context, v *proto.Version) (*proto.Version, error) {
-	nc, err := makeNodeClient(v.ListenAddr)
+	peerNodeClient, err := makeNodeClient(v.ListenAddr)
 	if err != nil {
 		return nil, err
 	}
-	n.AddPeer(nc, v)
+	n.AddPeer(peerNodeClient, v)
 
 	return n.getVersion(), nil
 }
@@ -149,7 +155,7 @@ func (n *Node) getVersion() *proto.Version {
 	return &proto.Version{
 		Version:    n.version,
 		Height:     n.chain.Height(),
-		ListenAddr: n.listenAddr,
+		ListenAddr: n.addr,
 		Peers:      n.peers.GetAddressList(),
 	}
 }
@@ -213,34 +219,34 @@ func (n *Node) bootstrapNetwork(addrs []string) error {
 			continue
 		}
 
-		nc, cv, err := n.dialRemoteNode(addr)
+		remNodeClient, remVersion, err := n.dialRemoteNode(addr)
 		if err != nil {
 			slog.Error("dial error", err)
 		}
 
-		n.AddPeer(nc, cv)
+		n.AddPeer(remNodeClient, remVersion)
 	}
 	return nil
 }
 
 func (n *Node) dialRemoteNode(addr string) (proto.NodeClient, *proto.Version, error) {
-	nc, err := makeNodeClient(addr)
+	remNodeClient, err := makeNodeClient(addr)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	v, err := nc.Handshake(context.Background(), n.getVersion())
+	remVersion, err := remNodeClient.Handshake(context.Background(), n.getVersion())
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// compare heights start sync if needed
-	slog.Info("height diff", "remote", v.Height, "local", n.chain.blockStore.Height())
-	if v.Height-n.chain.blockStore.Height() > 1 {
-		go n.syncBlocks(nc, v.Height)
+	slog.Info("height diff", "remote", remVersion.Height, "local", n.chain.blockStore.Height())
+	if remVersion.Height-n.chain.blockStore.Height() > 1 {
+		go n.syncBlocks(remNodeClient, remVersion.Height)
 	}
 
-	return nc, v, nil
+	return remNodeClient, remVersion, nil
 }
 
 func (n *Node) canConnectToPeer(addr string) bool {
@@ -264,4 +270,16 @@ func makeNodeClient(listenAddr string) (proto.NodeClient, error) {
 	}
 
 	return proto.NewNodeClient(client), nil
+}
+
+func getOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		slog.Error("error when dialing dns", err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP.String()
 }
