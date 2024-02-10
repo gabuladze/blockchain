@@ -13,9 +13,9 @@ RUN make build
 # https://hub.docker.com/_/debian
 # https://docs.docker.com/develop/develop-images/multistage-build/#use-multi-stage-builds
 FROM debian:bookworm-slim
-RUN set -x && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+RUN set -x && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary to the production image from the builder stage.
 COPY --from=builder /app/bin/node /app/node
