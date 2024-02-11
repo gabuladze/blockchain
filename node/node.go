@@ -22,7 +22,6 @@ type Node struct {
 	version    string
 	listenAddr string
 	addr       string
-	port       string
 	privKey    *crypto.PrivateKey
 	peers      *PeerStore
 	mempool    *Mempool
@@ -38,8 +37,7 @@ type Node struct {
 func NewNode(version, listenAddr, port string, privKey *crypto.PrivateKey) *Node {
 	return &Node{
 		version:    version,
-		listenAddr: listenAddr,
-		port:       port,
+		listenAddr: fmt.Sprintf("%s:%s", listenAddr, port),
 		addr:       fmt.Sprintf("%s:%s", getOutboundIP(), port),
 		privKey:    privKey,
 		peers:      NewPeerStore(),
@@ -53,8 +51,7 @@ func NewNode(version, listenAddr, port string, privKey *crypto.PrivateKey) *Node
 }
 
 func (n *Node) Start(bootstrapNodes []string) error {
-	listenAddr := fmt.Sprintf("%s:%s", n.listenAddr, n.port)
-	ln, err := net.Listen("tcp", listenAddr)
+	ln, err := net.Listen("tcp", n.listenAddr)
 	if err != nil {
 		return err
 	}
@@ -63,7 +60,7 @@ func (n *Node) Start(bootstrapNodes []string) error {
 	grpcServer := grpc.NewServer(grpcServerOpts...)
 
 	proto.RegisterNodeServer(grpcServer, n)
-	slog.Info("started grpc server", slog.String("listenAddr", listenAddr))
+	slog.Info("started grpc server", slog.String("listenAddr", n.listenAddr))
 
 	go n.bootstrapNetwork(bootstrapNodes)
 
@@ -94,7 +91,7 @@ func (n *Node) AddPeer(nc proto.NodeClient, cv *proto.Version) {
 }
 
 func (n *Node) Handshake(ctx context.Context, v *proto.Version) (*proto.Version, error) {
-	peerNodeClient, err := makeNodeClient(v.ListenAddr)
+	peerNodeClient, err := makeNodeClient(v.Addr)
 	if err != nil {
 		return nil, err
 	}
@@ -153,10 +150,10 @@ func (n *Node) syncBlocks(peer proto.NodeClient, toHeight int64) {
 
 func (n *Node) getVersion() *proto.Version {
 	return &proto.Version{
-		Version:    n.version,
-		Height:     n.chain.Height(),
-		ListenAddr: n.addr,
-		Peers:      n.peers.GetAddressList(),
+		Version: n.version,
+		Height:  n.chain.Height(),
+		Addr:    n.addr,
+		Peers:   n.peers.GetAddressList(),
 	}
 }
 
@@ -255,7 +252,7 @@ func (n *Node) canConnectToPeer(addr string) bool {
 	}
 
 	for _, version := range n.peers.GetPeers() {
-		if version.ListenAddr == addr {
+		if version.Addr == addr {
 			return false
 		}
 	}

@@ -22,7 +22,7 @@ func NewPeerStore() *PeerStore {
 func (ps *PeerStore) Add(nc proto.NodeClient, cv *proto.Version) error {
 	ps.peerLock.Lock()
 	defer ps.peerLock.Unlock()
-	slog.Info("new peer added", slog.String("addr", cv.ListenAddr))
+	slog.Info("new peer added", slog.String("addr", cv.Addr))
 	ps.peers[nc] = cv
 	return nil
 }
@@ -33,7 +33,7 @@ func (ps *PeerStore) GetAddressList() []string {
 
 	pList := []string{}
 	for _, version := range ps.peers {
-		pList = append(pList, version.ListenAddr)
+		pList = append(pList, version.Addr)
 	}
 
 	return pList

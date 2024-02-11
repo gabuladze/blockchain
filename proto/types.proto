@@ -22,7 +22,7 @@ message FetchBlocksResponse {
 message Version {
     string version = 1;
     int64 height = 2;
-    string listenAddr = 3;
+    string addr = 3;
     repeated string peers = 4;
 }
 
