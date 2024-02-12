@@ -212,7 +212,7 @@ func (n *Node) validatorLoop() {
 
 func (n *Node) bootstrapNetwork(addrs []string) error {
 	for _, addr := range addrs {
-		if !n.canConnectToPeer(addr) {
+		if n.addr == addr || n.peers.Has(addr) {
 			continue
 		}
 
@@ -244,20 +244,6 @@ func (n *Node) dialRemoteNode(addr string) (proto.NodeClient, *proto.Version, er
 	}
 
 	return remNodeClient, remVersion, nil
-}
-
-func (n *Node) canConnectToPeer(addr string) bool {
-	if n.listenAddr == addr {
-		return false
-	}
-
-	for _, version := range n.peers.GetPeers() {
-		if version.Addr == addr {
-			return false
-		}
-	}
-
-	return true
 }
 
 func makeNodeClient(listenAddr string) (proto.NodeClient, error) {
